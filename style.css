@@ -2,4 +2,5 @@ body{margin:0;background:#faf9f6;color:#222;font:17px/1.8 -apple-system,'Apple S
 main{max-width:720px;margin:auto;padding:32px 16px 64px}a{color:#2f6f5e}h1{font-size:28px;line-height:1.4}h2{font-size:20px;margin-top:36px}
 .meta{color:#777;font-size:14px}.tags span{display:inline-block;font-size:13px;color:#2f6f5e;margin:0 8px 4px 0}
 ul.list{list-style:none;padding:0}ul.list li{padding:14px 0;border-bottom:1px solid #e5e2dc}
-@media (prefers-color-scheme:dark){body{background:#17171a;color:#e8e8ea}ul.list li{border-color:#333}}
+@media (prefers-color-scheme:dark){body{background:#17171a;color:#e8e8ea}a,.tags span{color:#8fd3bd}.meta{color:#a0a0a8}ul.list li{border-color:#333}}
+.intro{color:#666}@media (prefers-color-scheme:dark){.intro{color:#b8b8c0}}
