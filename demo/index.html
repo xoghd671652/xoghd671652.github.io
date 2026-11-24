@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>단톡 보고 정리기</title>
+<script src="xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--sub:#6b6b70;--line:#e3e1dc;--acc:#2f6f5e;--warn:#b5651d;--warnbg:#fdf1e6;--ok:#2f6f5e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161618;--card:#1f1f22;--ink:#ececee;--sub:#9a9aa0;--line:#333338;--acc:#6fbfa6;--warn:#e7a35c;--warnbg:#2e2418}}
+:root[data-theme="dark"]{--bg:#161618;--card:#1f1f22;--ink:#ececee;--sub:#9a9aa0;--line:#333338;--acc:#6fbfa6;--warn:#e7a35c;--warnbg:#2e2418}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+header{padding:28px 16px 8px;max-width:1100px;margin:auto}
+h1{margin:0 0 4px;font-size:24px}
+header p{margin:0;color:var(--sub)}
+main{max-width:1100px;margin:auto;padding:12px 16px 48px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+label{display:block;font-weight:600;margin-bottom:6px}
+textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg);color:var(--ink);font:13px/1.5 ui-monospace,Menlo,monospace}
+#roster{min-height:120px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.set{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center;font-size:14px;margin-top:10px}
+.set input{width:90px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+button{border:0;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;background:var(--acc);color:#fff}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+.stats{display:flex;gap:12px;flex-wrap:wrap}
+.stat{flex:1;min-width:130px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font-size:22px}
+.stat span{color:var(--sub);font-size:13px}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.tabs button{background:transparent;color:var(--sub);border:1px solid var(--line)}
+.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
+th{color:var(--sub);font-weight:600}
+td.src{white-space:normal;color:var(--sub);min-width:220px}
+tr.warn td{background:var(--warnbg)}
+.tag{font-size:12px;padding:1px 6px;border-radius:10px;border:1px solid currentColor}
+.tag.w{color:var(--warn)}.tag.o{color:var(--ok)}
+.note{color:var(--sub);font-size:13px}
+</style>
+<meta name="description" content="가상 단톡 보고를 넣어 공수표와 확인 필요 목록을 만들어 보는 브라우저 데모. 입력 내용은 서버로 보내지 않습니다."><link rel="canonical" href="https://xoghd671652.github.io/demo/"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><meta property="og:title" content="단톡 보고 정리기 데모"><meta property="og:image" content="https://xoghd671652.github.io/img/og.png"></head>
+<body><div style="font:14px -apple-system,sans-serif;padding:8px 16px;background:#2f6f5e"><a href="/" style="color:#fff;text-decoration:none">← 단톡 보고 정리 노트</a><span style="color:#cfe8df;margin-left:12px">가상 데이터 데모 · 입력 내용은 서버로 보내지 않습니다</span></div>
+<header>
+  <h1>단톡 보고 정리기 <span class="note">데모 · 가상 데이터</span></h1>
+  <p>단톡방 출근·작업 보고를 붙여넣으면 날짜·현장·사람별 공수표와 확인할 항목을 만들어 엑셀로 내려받습니다.</p>
+</header>
+<main>
+  <div class="grid2">
+    <div class="card">
+      <label for="chat">1. 단톡방 내용 붙여넣기 (카카오톡 대화 내보내기 텍스트)</label>
+      <textarea id="chat" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="run">정리하기</button>
+        <button class="ghost" id="sample">예시 데이터 넣기</button>
+        <button class="ghost" id="clear">지우기</button>
+      </div>
+    </div>
+    <div class="card">
+      <label for="roster">2. 인원 명단 (한 줄에 한 명)</label>
+      <textarea id="roster" spellcheck="false"></textarea>
+      <p class="note">명단에 없는 이름은 '확인 필요'로 표시합니다.</p>
+      <label style="margin-top:12px">3. 공수 기준</label>
+      <div class="set">
+        <span>정상 출근</span><input id="full" type="number" step="0.1" value="1">
+        <span>반일·조퇴</span><input id="half" type="number" step="0.1" value="0.5">
+        <span>연장 1시간당</span><input id="ot" type="number" step="0.025" value="0.125">
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="out" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="tabs" style="margin-top:14px">
+      <button data-t="sum" class="on">사람별 공수표</button>
+      <button data-t="det">상세 내역</button>
+      <button data-t="rev">확인 필요</button>
+      <span style="flex:1"></span>
+      <button id="xlsx">엑셀 내려받기</button>
+    </div>
+    <div class="tw" id="view"></div>
+  </div>
+  <p class="note">이 데모는 인터넷 연결 없이 브라우저 안에서만 동작하며, 입력한 내용을 서버로 보내지 않습니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
+</main>
+
+<script>
+const SAMPLE_CHAT = `--------------- 2026년 11월 2일 월요일 ---------------
+[김반장] [오전 7:05] 11/2 한빛산단현장 출근 박도윤 이서준 최하준 정민재 (4명)
+[오반장] [오전 7:12] 푸른물류센터현장 출근: 강지호, 윤시우, 장은우
+[김반장] [오후 5:40] 박도윤 연장 2시간
+[오반장] [오후 3:10] 장은우 오후 조퇴합니다 (반일)
+--------------- 2026년 11월 3일 화요일 ---------------
+[김반장] [오전 7:01] 한빛산단현장 출근 박도윤 이서준 최하준 정민재 한건우
+[오반장] [오전 7:20] 푸른물류센터현장 출근 강지호 윤시우 장은우
+[김반장] [오전 9:30] 정정: 한건우 → 오늘 안전교육만 받고 퇴근
+[오반장] [오후 6:15] 강지호 윤시우 연장 1.5시간
+--------------- 2026년 11월 4일 수요일 ---------------
+[김반장] [오전 7:03] 한빛산단현장 출근 박도윤 이서준 정민재 한건우 / 최하준 결근(병원)
+[오반장] [오전 7:15] 푸른물류센터 출근 강지호 윤시우 장은우 김태윤
+[오반장] [오전 7:16] 김태윤 신규 오늘부터
+[김반장] [오후 5:50] 이서준 연장 3시간`;
+const SAMPLE_ROSTER = `박도윤
+이서준
+최하준
+정민재
+한건우
+강지호
+윤시우
+장은우`;
+
+const $ = s => document.querySelector(s);
+let result = null, tab = 'sum';
+
+function parseLines(text){
+  // 카카오톡 PC 내보내기 형식과 모바일 형식을 모두 읽는다
+  const out = []; let curDate = null;
+  for (const raw of text.split(/\r?\n/)){
+    const line = raw.trim(); if (!line) continue;
+    let m = line.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*\S*요일/);
+    if (m && /^-+/.test(line)) { curDate = fmt(m[1],m[2],m[3]); continue; }
+    m = line.match(/^\[([^\]]+)\]\s*\[(오전|오후)\s*(\d{1,2}):(\d{2})\]\s*(.*)$/);
+    if (m) { out.push({date:curDate, who:m[1], time:`${m[2]} ${m[3]}:${m[4]}`, msg:m[5], raw:line}); continue; }
+    m = line.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)\s*(\d{1,2}):(\d{2}),\s*([^:]+?)\s*:\s*(.*)$/);
+    if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]} ${m[5]}:${m[6]}`, msg:m[8], raw:line}); continue; }
+    if (out.length) { out[out.length-1].msg += ' ' + line; out[out.length-1].raw += '\n' + line; }
+  }
+  return out;
+}
+const fmt = (y,m,d) => `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+function analyze(chat, rosterText, rule){
+  const roster = rosterText.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const rosterSet = new Set(roster);
+  const msgs = parseLines(chat);
+  const rec = new Map();   // key date|name -> record
+  const review = [];
+  const key = (d,n) => d + '|' + n;
+  const hangulNames = s => (s.match(/[가-힣]{2,4}/g) || []);
+  const STOP = new Set(['출근','연장','시간','오늘','오후','오전','조퇴','반일','결근','병원','정정','신규','부터','합니다','퇴근','안전교육','받고','현장','명','오늘부터','만']);
+
+  for (const m of msgs){
+    if (!m.date){ review.push({date:'-', name:'-', reason:'날짜를 알 수 없는 메시지', src:m.raw}); continue; }
+    const text = m.msg;
+    const siteM = text.match(/([가-힣A-Za-z0-9]+?)(현장|센터)/);
+    const site = siteM ? siteM[1] + siteM[2] : null;
+    const isCorrection = /정정|수정|취소/.test(text);
+    const segments = text.split(/\s\/\s/);
+
+    for (const seg of segments){
+      const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
+      const known = names.filter(n => rosterSet.has(n));
+      const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
+
+      if (/출근/.test(seg)){
+        for (const n of known) upsert(n, {site, base: rule.full, src:m.raw});
+        for (const n of unknown){ upsert(n, {site, base: rule.full, src:m.raw}); flag(m.date, n, '명단에 없는 이름(신규 인원인지 확인)', m.raw); }
+      }
+      const ot = seg.match(/연장\s*([\d.]+)\s*시간/);
+      if (ot) for (const n of known.concat(unknown)) { const r = upsert(n,{src:m.raw}); r.otH += parseFloat(ot[1]); }
+      if (/반일|조퇴/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = Math.min(r.base || rule.half, rule.half); r.note.push('반일'); }
+      if (/결근/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = 0; r.note.push('결근'); }
+      if (isCorrection) for (const n of known) { const r = upsert(n,{src:m.raw}); r.flag = true; flag(m.date, n, '정정 보고: 공수 직접 확인 필요', m.raw); }
+      if (!/출근|연장|반일|조퇴|결근|정정|수정|취소/.test(seg) && known.length) for (const n of known) flag(m.date, n, '규칙에 없는 내용이 담긴 보고', m.raw);
+    }
+
+    function upsert(n, {site:s, base, src}){
+      const k = key(m.date, n);
+      if (!rec.has(k)) rec.set(k, {date:m.date, name:n, site:null, base:0, otH:0, note:[], src:[], flag:false});
+      const r = rec.get(k);
+      if ((s||site) && !r.site) r.site = s||site;
+      if (base !== undefined && r.base === 0 && !r.note.includes('결근')) r.base = base;
+      if (src && !r.src.includes(src)) r.src.push(src);
+      return r;
+    }
+  }
+  function flag(date, name, reason, src){ review.push({date, name, reason, src}); const r = rec.get(key(date,name)); if (r) r.flag = true; }
+
+  const rows = [...rec.values()].sort((a,b)=> a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  for (const r of rows){
+    r.otMd = +(r.otH * rule.ot).toFixed(3);
+    r.total = +(r.base + r.otMd).toFixed(3);
+    if (!r.site && r.base > 0){ r.flag = true; review.push({date:r.date, name:r.name, reason:'현장을 알 수 없음', src:r.src.join('\n')}); }
+  }
+  const dates = [...new Set(rows.map(r=>r.date))].sort();
+  const names = [...new Set(rows.map(r=>r.name))].sort((a,b)=>{ const ia=roster.indexOf(a), ib=roster.indexOf(b); return (ia<0?999:ia)-(ib<0?999:ib); });
+  return {rows, review, dates, names, msgCount: msgs.length};
+}
+function looksLikeName(w){ return w.length >= 2 && w.length <= 4 && !/요일|센터|현장|입니다|합니다|교육|병원/.test(w); }
+
+function render(){
+  if (!result) return;
+  const {rows, review, dates, names, msgCount} = result;
+  const sum = rows.reduce((s,r)=>s+r.total,0);
+  $('#stats').innerHTML = [
+    ['읽은 메시지', msgCount], ['인원', names.length], ['총 공수', sum.toFixed(2)], ['확인 필요', review.length]
+  ].map(([t,v])=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`).join('');
+  document.querySelectorAll('.tabs [data-t]').forEach(b=>b.classList.toggle('on', b.dataset.t===tab));
+  let h = '';
+  if (tab==='sum'){
+    h = `<table><tr><th>이름</th>${dates.map(d=>`<th>${d.slice(5)}</th>`).join('')}<th>합계</th></tr>`;
+    for (const n of names){
+      let t = 0;
+      h += `<tr><td>${esc(n)}</td>` + dates.map(d=>{ const r = rows.find(x=>x.date===d && x.name===n); if(!r) return '<td></td>'; t+=r.total; return `<td>${r.total}${r.flag?' <span class="tag w">확인</span>':''}</td>`; }).join('') + `<td><b>${t.toFixed(2)}</b></td></tr>`;
+    }
+    h += '</table>';
+  } else if (tab==='det'){
+    h = `<table><tr><th>날짜</th><th>현장</th><th>이름</th><th>기본</th><th>연장(시간)</th><th>연장 공수</th><th>합계</th><th>비고</th><th>근거 보고</th></tr>`;
+    for (const r of rows) h += `<tr class="${r.flag?'warn':''}"><td>${r.date}</td><td>${esc(r.site||'?')}</td><td>${esc(r.name)}</td><td>${r.base}</td><td>${r.otH||''}</td><td>${r.otMd||''}</td><td><b>${r.total}</b></td><td>${esc(r.note.join(', '))}</td><td class="src">${esc(r.src.join(' / '))}</td></tr>`;
+    h += '</table>';
+  } else {
+    h = review.length ? `<table><tr><th>날짜</th><th>이름</th><th>확인할 내용</th><th>근거 보고</th></tr>` + review.map(v=>`<tr class="warn"><td>${v.date}</td><td>${esc(v.name)}</td><td><span class="tag w">${esc(v.reason)}</span></td><td class="src">${esc(v.src)}</td></tr>`).join('') + '</table>' : '<p>확인할 항목이 없습니다.</p>';
+  }
+  $('#view').innerHTML = h;
+  $('#out').hidden = false;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function exportXlsx(){
+  const {rows, review, dates, names} = result;
+  const wb = XLSX.utils.book_new();
+  const sumAoa = [['이름', ...dates, '합계']].concat(names.map(n=>{ let t=0; const cells = dates.map(d=>{ const r=rows.find(x=>x.date===d&&x.name===n); if(!r) return ''; t+=r.total; return r.total; }); return [n, ...cells, +t.toFixed(3)]; }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumAoa), '사람별 공수표');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r=>({날짜:r.date, 현장:r.site||'', 이름:r.name, 기본공수:r.base, 연장시간:r.otH, 연장공수:r.otMd, 합계:r.total, 비고:r.note.join(', '), 확인필요:r.flag?'Y':'', 근거보고:r.src.join(' / ')}))), '상세 내역');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(review.map(v=>({날짜:v.date, 이름:v.name, 확인할내용:v.reason, 근거보고:v.src}))), '확인 필요');
+  XLSX.writeFile(wb, `공수정리_${dates[0]||''}_${dates[dates.length-1]||''}.xlsx`);
+}
+
+$('#sample').onclick = () => { $('#chat').value = SAMPLE_CHAT; $('#roster').value = SAMPLE_ROSTER; };
+$('#clear').onclick = () => { $('#chat').value = ''; $('#out').hidden = true; result = null; };
+$('#run').onclick = () => {
+  const rule = {full:+$('#full').value, half:+$('#half').value, ot:+$('#ot').value};
+  result = analyze($('#chat').value, $('#roster').value, rule); tab = 'sum'; render();
+};
+document.querySelectorAll('.tabs [data-t]').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
+$('#xlsx').onclick = () => { if (!window.XLSX) { alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; } exportXlsx(); };
+if (typeof module !== 'undefined') module.exports = {parseLines, analyze};
+</script>
+</body>
+</html>
