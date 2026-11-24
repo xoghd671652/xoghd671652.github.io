@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 280" width="800" height="280" role="img" aria-label="여러 이름 표기를 한 사람으로 묶는 예시 (가상 데이터)">
+<style>text{font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif}.h{font-size:15px;font-weight:700;fill:#1f2a27}.s{font-size:14px;fill:#333}.n{font-size:11px;fill:#6b6b6b}</style>
+<rect width="800" height="280" rx="16" fill="#f4f2ed"/>
+<text x="30" y="40" class="h">보고에 나온 표기 (가상)</text>
+<g class="s">
+<rect x="30" y="60" width="200" height="34" rx="17" fill="#fff"/><text x="50" y="82">박도윤</text>
+<rect x="30" y="104" width="200" height="34" rx="17" fill="#fff"/><text x="50" y="126">도윤</text>
+<rect x="30" y="148" width="200" height="34" rx="17" fill="#fff"/><text x="50" y="170">박도윤 반장</text>
+<rect x="30" y="192" width="200" height="34" rx="17" fill="#fff"/><text x="50" y="214">도윤이형</text>
+</g>
+<g stroke="#2f6f5e" stroke-width="2.5" fill="none"><path d="M232 77 C330 77 330 143 420 143"/><path d="M232 121 C330 121 330 143 420 143"/><path d="M232 165 C330 165 330 143 420 143"/><path d="M232 209 C330 209 330 143 420 143"/></g>
+<rect x="420" y="118" width="170" height="50" rx="10" fill="#2f6f5e"/><text x="440" y="149" style="font-size:16px;font-weight:700;fill:#fff">박도윤 (공식 표기)</text>
+<text x="420" y="200" class="s">별칭 목록을 한 번 만들어 두면</text>
+<text x="420" y="222" class="s">월말 합계가 한 줄로 모입니다</text>
+<text x="30" y="260" class="n">가상 데이터 예시 · 같은 이름의 다른 사람은 명단으로 구분합니다</text>
+</svg>

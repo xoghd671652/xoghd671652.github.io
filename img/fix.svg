@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="정정 보고 전후 공수표 비교 (가상 데이터)">
+<style>text{font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif}.h{font-size:15px;font-weight:700;fill:#1f2a27}.s{font-size:13px;fill:#333}.n{font-size:11px;fill:#6b6b6b}.td{font-size:13px;fill:#222}.th{font-size:12px;font-weight:700;fill:#fff}</style>
+<rect width="800" height="300" rx="16" fill="#f4f2ed"/>
+<text x="30" y="40" class="h">보고 순서 (가상)</text>
+<text x="30" y="70" class="n">오전 7:05 · 현장반장</text><rect x="30" y="76" width="300" height="28" rx="8" fill="#fff"/><text x="40" y="95" class="s">한빛산단 최민재 출근</text>
+<text x="30" y="126" class="n">오후 6:05 · 최민재</text><rect x="30" y="132" width="300" height="28" rx="8" fill="#fff"/><text x="40" y="151" class="s">오전만 하고 조퇴했습니다</text>
+<text x="30" y="182" class="n">오후 6:20 · 현장반장</text><rect x="30" y="188" width="300" height="28" rx="8" fill="#fff4e0" stroke="#e8b45a"/><text x="40" y="207" class="s">정정: 최민재 반일 → 1공수 (오후 복귀)</text>
+<path d="M350 150 h40" stroke="#2f6f5e" stroke-width="4"/><path d="M388 138 l16 12 l-16 12z" fill="#2f6f5e"/>
+<g transform="translate(420,52)">
+<text x="0" y="-12" class="h">공수표</text>
+<rect width="330" height="30" rx="6" fill="#2f6f5e"/><text x="12" y="20" class="th">이름</text><text x="100" y="20" class="th">정정 전</text><text x="190" y="20" class="th">정정 후</text><text x="255" y="20" class="th">근거</text>
+<rect y="30" width="330" height="36" fill="#fff"/><text x="12" y="53" class="td">최민재</text><text x="100" y="53" class="td" style="text-decoration:line-through;fill:#999">0.5</text><text x="190" y="53" class="td" style="font-weight:700">1.0</text><text x="255" y="53" class="n">6:05 → 6:20</text>
+<rect y="80" width="330" height="70" rx="8" fill="#fff"/>
+<text x="12" y="104" class="s">정정 보고는 지우지 않고</text>
+<text x="12" y="126" class="s">무엇을 언제 고쳤는지 함께 남깁니다</text>
+<text x="0" y="190" class="n">가상 데이터 예시 · 공수 기준은 회사마다 다릅니다</text>
+</g></svg>
