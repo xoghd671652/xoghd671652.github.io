@@ -148,7 +148,8 @@ function analyze(chat, rosterText, rule){
   const rec = new Map();   // key date|name -> record
   const review = [];
   const key = (d,n) => d + '|' + n;
-  const hangulNames = s => (s.match(/[가-힣]{2,4}/g) || []).filter(w => !/^시간/.test(w));
+  const hangulNames = s => (s.match(/[가-힣]{2,4}/g) || []).filter(w => !/^(시간|출근|연장|조퇴|반일|결근|퇴근|정정|취소|수정)/.test(w));
+  const latin = roster.filter(n => !/^[가-힣]+$/.test(n)).map(n => [n, new RegExp('(^|[^A-Za-z])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Za-z]|$)', 'i')]);   // 영문 등 한글 아닌 이름
   const STOP = new Set(['출근','연장','시간','오늘','오후','오전','조퇴','반일','결근','병원','정정','신규','부터','합니다','퇴근','안전교육','받고','현장','명','오늘부터','만','시간반','취소','수정','했습니다','합니다만']);
 
   for (const m of msgs){
@@ -157,21 +158,32 @@ function analyze(chat, rosterText, rule){
     const siteM = text.match(/([가-힣A-Za-z0-9]+?)(현장|센터)/);
     const site = siteM ? siteM[1] + siteM[2] : null;
     const isCorrection = /정정|수정|취소/.test(text);
+    // 본문에 적힌 날짜가 보낸 날짜와 다르면(뒤늦은 보고) 자동 반영하지 않는다
+    const dm = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})(?!\d)|(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+    const [, mm, dd] = m.date.split('-').map(Number);
+    if (/어제|그저께|전날/.test(text) || (dm && (+(dm[1]||dm[3]) !== mm || +(dm[2]||dm[4]) !== dd))) {
+      review.push({date:m.date, name:'-', reason:'보고 날짜와 보낸 날짜가 다름(날짜 직접 확인, 자동 반영 안 함)', src:m.raw}); continue;
+    }
     const segments = text.split(/\s\/\s/);
 
     for (const seg of segments){
       const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
-      const known = names.filter(n => rosterSet.has(n));
+      const known = names.filter(n => rosterSet.has(n)).concat(latin.filter(([, re]) => re.test(seg)).map(([n]) => n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
 
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
       const people = [...new Set(known.concat(unknown))];
       const cats = ['출근', '연장', '반일|조퇴', '결근'].filter(k => new RegExp(k).test(seg));
+      if (/안\s*함|안\s*나|못\s*(나|했|함)|미출근|불참|없음/.test(seg) && people.length) {   // 부정 표현은 자동 반영하지 않음
+        for (const n of people) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '부정 표현이 있는 보고(직접 확인)', m.raw); }
+        continue;
+      }
       if (cats.length > 1 && people.length > 1) {
         for (const n of people) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '여러 사람·여러 근태가 한 보고에 섞임(직접 확인)', m.raw); }
         continue;
       }
-      if (/\d+\s*명/.test(seg)) review.push({date:m.date, name:(people[0]||'(이름 없음)'), reason:'인원수로 적힌 보고(빠진 이름을 직접 확인)', src:m.raw});
+      const cnt = seg.match(/(외\s*)?(\d+)\s*명/);
+      if (cnt && (cnt[1] || +cnt[2] > people.length)) review.push({date:m.date, name:(people[0]||'(이름 없음)'), reason:'인원수로 적힌 보고(빠진 이름을 직접 확인)', src:m.raw});
       if (/반일|조퇴|결근/.test(seg)) for (const n of new Set(unknown)) flag(m.date, n, '명단에 없는 이름의 근태 보고(직접 확인)', m.raw);
       if (/출근/.test(seg)){
         for (const n of known) upsert(n, {site, base: rule.full, src:m.raw});
