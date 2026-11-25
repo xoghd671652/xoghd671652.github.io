@@ -183,7 +183,7 @@ function analyze(chat, rosterText, rule){
         continue;
       }
       const cnt = seg.match(/(외\s*)?(\d+)\s*명/);
-      if (cnt && (cnt[1] || +cnt[2] > people.length)) review.push({date:m.date, name:(people[0]||'(이름 없음)'), reason:'인원수로 적힌 보고(빠진 이름을 직접 확인)', src:m.raw});
+      if (cnt && (cnt[1] || +cnt[2] !== people.length)) review.push({date:m.date, name:(people[0]||'(이름 없음)'), reason:'인원수로 적힌 보고(빠진 이름을 직접 확인)', src:m.raw});
       if (/반일|조퇴|결근/.test(seg)) for (const n of new Set(unknown)) flag(m.date, n, '명단에 없는 이름의 근태 보고(직접 확인)', m.raw);
       if (/출근/.test(seg)){
         for (const n of known) upsert(n, {site, base: rule.full, src:m.raw});
