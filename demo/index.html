@@ -138,7 +138,7 @@ function parseOt(seg){
   if (!/연장/.test(seg)) return undefined;
   const m = seg.match(/연장\s*(?:(\d+(?:\.\d+)?)\s*시간\s*(반)?)?\s*(?:(\d+)\s*분)?/);
   if (!m || (!m[1] && !m[3])) return null;
-  if (/^\s*[\d.]/.test(seg.slice(m.index + m[0].length))) return null;   // '1시간 2..5분'처럼 뒤에 숫자가 더 붙으면 못 읽은 것으로
+  if (/^\s*([\d.~\-–]|부터|에서)/.test(seg.slice(m.index + m[0].length))) return null;   // 범위(1시간~2시간)도 못 읽은 것으로   // '1시간 2..5분'처럼 뒤에 숫자가 더 붙으면 못 읽은 것으로
   return (m[1] ? parseFloat(m[1]) : 0) + (m[2] ? 0.5 : 0) + (m[3] ? parseInt(m[3], 10) / 60 : 0);
 }
 function analyze(chat, rosterText, rule){
@@ -164,6 +164,15 @@ function analyze(chat, rosterText, rule){
       const known = names.filter(n => rosterSet.has(n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
 
+      // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
+      const people = [...new Set(known.concat(unknown))];
+      const cats = ['출근', '연장', '반일|조퇴', '결근'].filter(k => new RegExp(k).test(seg));
+      if (cats.length > 1 && people.length > 1) {
+        for (const n of people) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '여러 사람·여러 근태가 한 보고에 섞임(직접 확인)', m.raw); }
+        continue;
+      }
+      if (/\d+\s*명/.test(seg)) review.push({date:m.date, name:(people[0]||'(이름 없음)'), reason:'인원수로 적힌 보고(빠진 이름을 직접 확인)', src:m.raw});
+      if (/반일|조퇴|결근/.test(seg)) for (const n of new Set(unknown)) flag(m.date, n, '명단에 없는 이름의 근태 보고(직접 확인)', m.raw);
       if (/출근/.test(seg)){
         for (const n of known) upsert(n, {site, base: rule.full, src:m.raw});
         for (const n of unknown){ upsert(n, {site, base: rule.full, src:m.raw}); flag(m.date, n, '명단에 없는 이름(신규 인원인지 확인)', m.raw); }
@@ -173,9 +182,8 @@ function analyze(chat, rosterText, rule){
         const who = [...new Set(known)];   // 명단에 있는 사람만 합산. 명단 밖 후보는 확인 전까지 더하지 않는다
         const why = ot === null ? '연장 시간을 읽지 못함(직접 확인)'
           : (seg.match(/연장/g) || []).length > 1 ? '한 보고에 연장이 여러 번 나옴(사람별 직접 확인)'
-          : /출근/.test(seg) ? '출근과 연장이 한 보고에 섞임(연장 대상 직접 확인)'
           : !who.length ? '연장 대상 이름을 찾지 못함(직접 확인)' : '';
-        if (!why) for (const n of who) { const r = upsert(n,{src:m.raw}); r.otH += ot; }
+        if (!why) for (const n of who) { const r = upsert(n,{src:m.raw}); if (r.otH) { r.flag = true; flag(m.date, n, '같은 날 연장 보고가 또 있음(중복 전송인지 확인)', m.raw); } r.otH += ot; }
         else if (who.length) for (const n of who) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, why, m.raw); }
         else review.push({date:m.date, name:'(이름 없음)', reason:why, src:m.raw});
         for (const n of new Set(unknown)) if (!why) flag(m.date, n, '명단에 없는 이름의 연장 보고(합산 안 함, 직접 확인)', m.raw);
