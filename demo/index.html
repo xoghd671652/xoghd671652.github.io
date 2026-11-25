@@ -133,6 +133,13 @@ function parseLines(text){
 }
 const fmt = (y,m,d) => `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
+// "연장 2시간", "연장 1.5시간", "연장 1시간 30분", "연장 1시간반", "연장 15분" → 시간 수. 연장이라는 말은 있는데 시간을 못 읽으면 null.
+function parseOt(seg){
+  if (!/연장/.test(seg)) return undefined;
+  const m = seg.match(/연장\s*(?:([\d.]+)\s*시간\s*(반)?)?\s*(?:(\d+)\s*분)?/);
+  if (!m || (!m[1] && !m[3])) return null;
+  return (m[1] ? parseFloat(m[1]) : 0) + (m[2] ? 0.5 : 0) + (m[3] ? parseInt(m[3], 10) / 60 : 0);
+}
 function analyze(chat, rosterText, rule){
   const roster = rosterText.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   const rosterSet = new Set(roster);
@@ -160,8 +167,9 @@ function analyze(chat, rosterText, rule){
         for (const n of known) upsert(n, {site, base: rule.full, src:m.raw});
         for (const n of unknown){ upsert(n, {site, base: rule.full, src:m.raw}); flag(m.date, n, '명단에 없는 이름(신규 인원인지 확인)', m.raw); }
       }
-      const ot = seg.match(/연장\s*([\d.]+)\s*시간/);
-      if (ot) for (const n of known.concat(unknown)) { const r = upsert(n,{src:m.raw}); r.otH += parseFloat(ot[1]); }
+      const ot = parseOt(seg);
+      if (ot > 0) for (const n of known.concat(unknown)) { const r = upsert(n,{src:m.raw}); r.otH += ot; }
+      else if (ot === null) for (const n of known.concat(unknown)) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '연장 시간을 읽지 못함(직접 확인)', m.raw); }
       if (/반일|조퇴/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = Math.min(r.base || rule.half, rule.half); r.note.push('반일'); }
       if (/결근/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = 0; r.note.push('결근'); }
       if (isCorrection) for (const n of known) { const r = upsert(n,{src:m.raw}); r.flag = true; flag(m.date, n, '정정 보고: 공수 직접 확인 필요', m.raw); }
@@ -182,8 +190,8 @@ function analyze(chat, rosterText, rule){
 
   const rows = [...rec.values()].sort((a,b)=> a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
   for (const r of rows){
-    r.otMd = +(r.otH * rule.ot).toFixed(4);
-    r.total = +(r.base + r.otMd).toFixed(4);
+    r.otMd = r.otH * rule.ot;   // 회사 반올림 기준이 정해지기 전에는 환산값을 그대로 두고, 표시할 때만 자릿수를 맞춘다
+    r.total = r.base + r.otMd;
     if (!r.site && r.base > 0){ r.flag = true; review.push({date:r.date, name:r.name, reason:'현장을 알 수 없음', src:r.src.join('\n')}); }
   }
   const dates = [...new Set(rows.map(r=>r.date))].sort();
@@ -197,7 +205,7 @@ function render(){
   const {rows, review, dates, names, msgCount} = result;
   const sum = rows.reduce((s,r)=>s+r.total,0);
   $('#stats').innerHTML = [
-    ['읽은 메시지', msgCount], ['인원', names.length], ['총 공수', +sum.toFixed(4)], ['확인 필요', review.length]
+    ['읽은 메시지', msgCount], ['인원', names.length], ['총 공수', show(sum)], ['확인 필요', review.length]
   ].map(([t,v])=>`<div class="stat"><b>${v}</b><span>${t}</span></div>`).join('');
   document.querySelectorAll('.tabs [data-t]').forEach(b=>b.classList.toggle('on', b.dataset.t===tab));
   let h = '';
@@ -205,12 +213,12 @@ function render(){
     h = `<table><tr><th>이름</th>${dates.map(d=>`<th>${d.slice(5)}</th>`).join('')}<th>합계</th></tr>`;
     for (const n of names){
       let t = 0;
-      h += `<tr><td>${esc(n)}</td>` + dates.map(d=>{ const r = rows.find(x=>x.date===d && x.name===n); if(!r) return '<td></td>'; t+=r.total; return `<td>${r.total}${r.flag?' <span class="tag w">확인</span>':''}</td>`; }).join('') + `<td><b>${+t.toFixed(4)}</b></td></tr>`;
+      h += `<tr><td>${esc(n)}</td>` + dates.map(d=>{ const r = rows.find(x=>x.date===d && x.name===n); if(!r) return '<td></td>'; t+=r.total; return `<td>${show(r.total)}${r.flag?' <span class="tag w">확인</span>':''}</td>`; }).join('') + `<td><b>${show(t)}</b></td></tr>`;
     }
     h += '</table>';
   } else if (tab==='det'){
     h = `<table><tr><th>날짜</th><th>현장</th><th>이름</th><th>기본</th><th>연장(시간)</th><th>연장 공수</th><th>합계</th><th>비고</th><th>근거 보고</th></tr>`;
-    for (const r of rows) h += `<tr class="${r.flag?'warn':''}"><td>${r.date}</td><td>${esc(r.site||'?')}</td><td>${esc(r.name)}</td><td>${r.base}</td><td>${r.otH||''}</td><td>${r.otMd||''}</td><td><b>${r.total}</b></td><td>${esc(r.note.join(', '))}</td><td class="src">${esc(r.src.join(' / '))}</td></tr>`;
+    for (const r of rows) h += `<tr class="${r.flag?'warn':''}"><td>${r.date}</td><td>${esc(r.site||'?')}</td><td>${esc(r.name)}</td><td>${r.base}</td><td>${r.otH||''}</td><td>${r.otMd?show(r.otMd):''}</td><td><b>${show(r.total)}</b></td><td>${esc(r.note.join(', '))}</td><td class="src">${esc(r.src.join(' / '))}</td></tr>`;
     h += '</table>';
   } else {
     h = review.length ? `<table><tr><th>날짜</th><th>이름</th><th>확인할 내용</th><th>근거 보고</th></tr>` + review.map(v=>`<tr class="warn"><td>${v.date}</td><td>${esc(v.name)}</td><td><span class="tag w">${esc(v.reason)}</span></td><td class="src">${esc(v.src)}</td></tr>`).join('') + '</table>' : '<p>확인할 항목이 없습니다.</p>';
@@ -218,14 +226,16 @@ function render(){
   $('#view').innerHTML = h;
   $('#out').hidden = false;
 }
+const show = v => String(+v.toFixed(6));          // 화면 표시용(부동소수 잡음 제거)
+const num = v => +v.toFixed(10);                 // 엑셀 저장용(업무 반올림 없음)
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function exportXlsx(){
   const {rows, review, dates, names} = result;
   const wb = XLSX.utils.book_new();
-  const sumAoa = [['이름', ...dates, '합계']].concat(names.map(n=>{ let t=0; const cells = dates.map(d=>{ const r=rows.find(x=>x.date===d&&x.name===n); if(!r) return ''; t+=r.total; return r.total; }); return [n, ...cells, +t.toFixed(4)]; }));
+  const sumAoa = [['이름', ...dates, '합계']].concat(names.map(n=>{ let t=0; const cells = dates.map(d=>{ const r=rows.find(x=>x.date===d&&x.name===n); if(!r) return ''; t+=r.total; return num(r.total); }); return [n, ...cells, num(t)]; }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumAoa), '사람별 공수표');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r=>({날짜:r.date, 현장:r.site||'', 이름:r.name, 기본공수:r.base, 연장시간:r.otH, 연장공수:r.otMd, 합계:r.total, 비고:r.note.join(', '), 확인필요:r.flag?'Y':'', 근거보고:r.src.join(' / ')}))), '상세 내역');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r=>({날짜:r.date, 현장:r.site||'', 이름:r.name, 기본공수:r.base, 연장시간:r.otH, 연장공수:num(r.otMd), 합계:num(r.total), 비고:r.note.join(', '), 확인필요:r.flag?'Y':'', 근거보고:r.src.join(' / ')}))), '상세 내역');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(review.map(v=>({날짜:v.date, 이름:v.name, 확인할내용:v.reason, 근거보고:v.src}))), '확인 필요');
   XLSX.writeFile(wb, `공수정리_${dates[0]||''}_${dates[dates.length-1]||''}.xlsx`);
 }
