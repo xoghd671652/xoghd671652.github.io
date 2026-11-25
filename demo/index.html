@@ -138,6 +138,7 @@ function parseOt(seg){
   if (!/연장/.test(seg)) return undefined;
   const m = seg.match(/연장\s*(?:(\d+(?:\.\d+)?)\s*시간\s*(반)?)?\s*(?:(\d+)\s*분)?/);
   if (!m || (!m[1] && !m[3])) return null;
+  if (/^\s*[\d.]/.test(seg.slice(m.index + m[0].length))) return null;   // '1시간 2..5분'처럼 뒤에 숫자가 더 붙으면 못 읽은 것으로
   return (m[1] ? parseFloat(m[1]) : 0) + (m[2] ? 0.5 : 0) + (m[3] ? parseInt(m[3], 10) / 60 : 0);
 }
 function analyze(chat, rosterText, rule){
@@ -169,16 +170,19 @@ function analyze(chat, rosterText, rule){
       }
       const ot = parseOt(seg);
       if (ot !== undefined && !isCorrection) {   // 정정·취소가 섞인 보고는 아래 정정 규칙으로 확인 목록에 간다
-        const who = known.concat(unknown);
+        const who = [...new Set(known)];   // 명단에 있는 사람만 합산. 명단 밖 후보는 확인 전까지 더하지 않는다
         const why = ot === null ? '연장 시간을 읽지 못함(직접 확인)'
           : (seg.match(/연장/g) || []).length > 1 ? '한 보고에 연장이 여러 번 나옴(사람별 직접 확인)'
+          : /출근/.test(seg) ? '출근과 연장이 한 보고에 섞임(연장 대상 직접 확인)'
           : !who.length ? '연장 대상 이름을 찾지 못함(직접 확인)' : '';
         if (!why) for (const n of who) { const r = upsert(n,{src:m.raw}); r.otH += ot; }
         else if (who.length) for (const n of who) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, why, m.raw); }
         else review.push({date:m.date, name:'(이름 없음)', reason:why, src:m.raw});
+        for (const n of new Set(unknown)) if (!why) flag(m.date, n, '명단에 없는 이름의 연장 보고(합산 안 함, 직접 확인)', m.raw);
       }
       if (/반일|조퇴/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = Math.min(r.base || rule.half, rule.half); r.note.push('반일'); }
       if (/결근/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = 0; r.note.push('결근'); }
+      if (isCorrection && !known.length) review.push({date:m.date, name:(unknown[0]||'(이름 없음)'), reason:'정정·취소 보고(대상 직접 확인)', src:m.raw});
       if (isCorrection) for (const n of known) { const r = upsert(n,{src:m.raw}); r.flag = true; flag(m.date, n, '정정 보고: 공수 직접 확인 필요', m.raw); }
       if (!/출근|연장|반일|조퇴|결근|정정|수정|취소/.test(seg) && known.length) for (const n of known) flag(m.date, n, '규칙에 없는 내용이 담긴 보고', m.raw);
     }
