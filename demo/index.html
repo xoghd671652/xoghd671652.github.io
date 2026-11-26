@@ -214,7 +214,7 @@ function analyze(chat, rosterText, rule){
       const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
       const known = names.filter(n => rosterSet.has(n)).concat(latin.filter(([, re]) => re.test(seg)).map(([n]) => n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
-      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
+      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && !/[A-Za-z]{2,}/.test(seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
 
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
       const people = [...new Set(known.concat(unknown))];
@@ -239,7 +239,7 @@ function analyze(chat, rosterText, rule){
         const who = [...new Set(known)];   // 명단에 있는 사람만 합산. 명단 밖 후보는 확인 전까지 더하지 않는다
         const why = ot === null ? '연장 시간을 읽지 못함(직접 확인)'
           : (seg.match(/연장/g) || []).length > 1 ? '한 보고에 연장이 여러 번 나옴(사람별 직접 확인)'
-          : (() => { let rest = seg.slice(0, seg.indexOf('연장')); for (const n of who) { if (!rest.includes(n)) { if (who.length === 1 && n === (m.who || '').trim()) continue; return true; } rest = rest.split(n).join(''); } if (site) rest = rest.split(site).join(''); return /[가-힣]/.test(rest.replace(/님|씨|반장|\d+조|금일|오늘|은|는|하고|이랑|랑|과|와|및/g, '')); })() ? '연장 대상이 분명하지 않음(다른 내용과 섞인 보고, 직접 확인)'
+          : (() => { let rest = seg.slice(0, seg.indexOf('연장')); for (const n of who) { if (!rest.includes(n)) { if (who.length === 1 && n === (m.who || '').trim() && !/[가-힣A-Za-z]/.test(rest.replace(/금일|오늘/g, ''))) continue; return true; } rest = rest.split(n).join(''); } if (site) rest = rest.split(site).join(''); return /[가-힣]/.test(rest.replace(/님|씨|반장|\d+조|금일|오늘|은|는|하고|이랑|랑|과|와|및/g, '')); })() ? '연장 대상이 분명하지 않음(다른 내용과 섞인 보고, 직접 확인)'
           : !who.length ? '연장 대상 이름을 찾지 못함(직접 확인)' : '';
         if (!why) for (const n of who) { const r = upsert(n,{src:m.raw}); if (r.otH) { r.flag = true; flag(m.date, n, '같은 날 연장 보고가 또 있음(중복 전송인지 확인)', m.raw); } r.otH += ot; }
         else if (who.length) for (const n of who) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, why, m.raw); }
