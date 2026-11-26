@@ -289,12 +289,13 @@ function formSheet(form){
   const site = sites.length === 1 ? sites[0] : sites.length ? '여러 현장' : '현장';
   const multiMonth = days[0].slice(0,7) !== days[days.length-1].slice(0,7);
   const dayNo = days.map(d => multiMonth ? `${+d.slice(5,7)}/${+d.slice(8)}` : +d.slice(8)), dow = days.map(d => DOW[new Date(d + 'T00:00').getDay()]);
-  const absent = r => r && !r.base && !r.otH && r.note.includes('결근');   // 결근 확인된 날은 빈칸(미보고)과 구분
+  const absent = r => r && !r.flag && !r.base && !r.otH && r.note.includes('결근');   // 결근 확인된 날은 빈칸(미보고)과 구분
+  const mark = r => r && r.flag && !r.total ? '확인 필요' : null;   // 확인 목록에 걸린 0공수 날은 결근으로 단정하지 않음
   let aoa, merges = [], name;
   if (form === 'month') {
     name = '공수현황';
     aoa = [[`(데모) ${site} ${period} 공수현황`], [], ['순번','현장','성명','직종', ...dayNo, '합계','출력일수','비고'], ['','','','', ...dow, '','','']];
-    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); return absent(r) ? '결근' : r && r.total ? r.total : ''; }); aoa.push([i+1, siteOf(n), n, '', ...v, add(v), v.filter(x => typeof x === 'number').length, noteOf(n)]); });
+    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); return mark(r) || (absent(r) ? '결근' : r && r.total ? r.total : ''); }); aoa.push([i+1, siteOf(n), n, '', ...v, add(v), v.filter(x => typeof x === 'number').length, noteOf(n)]); });
     aoa.push(['','','일계','', ...days.map((d, j) => add(aoa.slice(4).map(r => r[4+j]))), add(aoa.slice(4).map(r => r[4+days.length])), '', '']);
     merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   } else if (form === 'split') {
@@ -302,12 +303,12 @@ function formSheet(form){
     aoa = [[`(데모) ${site} ${period} 근무현황 (근무=공수, O/T=연장 시간)`], [], ['순번','현장','구분','성명','공종'], ['','','','','']];
     days.forEach((d, j) => { aoa[2].push(`${dayNo[j]}(${dow[j]})`, ''); aoa[3].push('근무','O/T'); merges.push({s:{r:2,c:5+j*2}, e:{r:2,c:6+j*2}}); });
     aoa[2].push('근무 합계','O/T 합계(시간)','환산 공수 합계'); aoa[3].push('','','');
-    names.forEach((n, i) => { const cells = [], b = [], o = [], t = []; days.forEach(d => { const r = at(d, n); cells.push(absent(r) ? '결근' : r && r.base ? r.base : '', r && r.otH ? r.otH : ''); b.push(r ? r.base : 0); o.push(r ? r.otH : 0); t.push(r ? r.total : 0); }); aoa.push([i+1, siteOf(n), '', n, '', ...cells, add(b), add(o), add(t)]); });
+    names.forEach((n, i) => { const cells = [], b = [], o = [], t = []; days.forEach(d => { const r = at(d, n); cells.push(mark(r) || (absent(r) ? '결근' : r && r.base ? r.base : ''), r && r.otH ? r.otH : ''); b.push(r ? r.base : 0); o.push(r ? r.otH : 0); t.push(r ? r.total : 0); }); aoa.push([i+1, siteOf(n), '', n, '', ...cells, add(b), add(o), add(t)]); });
     merges.push({s:{r:0,c:0}, e:{r:0,c:8}});
   } else {
     name = '근무시간';
     aoa = [[`(데모) ${site} ${period} 근무시간 체크표 (환산시간 = 기본공수 × ${HOURS_PER_MD} + 연장시간)`], [], ['No.','현장','성명', ...days.map((d, j) => `${+d.slice(5,7)}/${+d.slice(8)}(${dow[j]})`), '합계(시간)']];
-    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); if (absent(r)) return '결근'; const h = r ? r.base * HOURS_PER_MD + r.otH : 0; return h || ''; }); aoa.push([i+1, siteOf(n), n, ...v, add(v)]); });
+    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); if (mark(r)) return mark(r); if (absent(r)) return '결근'; const h = r ? r.base * HOURS_PER_MD + r.otH : 0; return h || ''; }); aoa.push([i+1, siteOf(n), n, ...v, add(v)]); });
     merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
