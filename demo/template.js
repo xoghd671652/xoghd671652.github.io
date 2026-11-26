@@ -112,10 +112,12 @@
       }
       // 합계 행(날짜 칸이 SUM 수식): 사람을 넣으면 안 되는 행
       const isTotalRow = rr => days.slice(0, 5).some(d => { const c = ws.getCell(rr, d.col); return isFormula(c) && (/SUM|SUBTOTAL/i.test(formulaText(c)) || (c.value.sharedFormula && /SUM/i.test(formulaText(ws.getCell(c.value.sharedFormula))))); });
+      // 머리글 같은 행(요일·라벨이 적힌 행): 이름이 없고 날짜 칸 대부분이 글자
+      const headerish = rr => !ownText(ws, ws.getCell(rr, nameCol)) && days.slice(0, 7).filter(d => { const v = cellValue(ws, ws.getCell(rr, d.col)); return typeof v === 'string' && v.trim() && !/^\d+(\.\d+)?$/.test(v.trim()); }).length >= 4;
       // 자료 시작 행: 머리글·날짜행·라벨행 다음
       let start = Math.max(r, dayRow) + 1;
       if (pairs || hasLabels) start = Math.max(start, sub + 1);
-      while (start <= ws.rowCount && !ownText(ws, ws.getCell(start, nameCol)) && (isTotalRow(start) || days.some(d => { const c = ws.getCell(start, d.col); return isFormula(c) && dayOf(cellValue(ws, c)); }))) start++;   // 요일·날짜 반복 행, 위쪽 합계 행 건너뛰기
+      while (start <= ws.rowCount && !ownText(ws, ws.getCell(start, nameCol)) && (isTotalRow(start) || headerish(start) || days.some(d => { const c = ws.getCell(start, d.col); return isFormula(c) && dayOf(cellValue(ws, c)); }))) start++;   // 요일·날짜 반복 행, 위쪽 합계 행 건너뛰기
       // 자료 끝 행: 합계·일계 행 전까지
       let end = start - 1;
       for (let rr = start; rr <= ws.rowCount; rr++) {
@@ -123,7 +125,7 @@
         if (firstCells.some(t => STOP_RE.test(t)) || isTotalRow(rr)) break;
         end = rr;
       }
-      return { ws, headerRow: r, dayRow, start, end, days, pairs, night, cols };
+      return { ws, headerRow: r, dayRow, start, end, days, pairs, night, cols, headerish };
     }
     return null;
   }
@@ -159,7 +161,7 @@
     if (months.length > 1 && !days.some(d => d.m) && !days.some(d => d.seg > 0)) { report.warnings.push(`자료가 여러 달(${months.join(', ')})인데 양식 날짜 칸에 월이 없어 어느 달 칸인지 정할 수 없습니다. 한 달씩 나눠 정리한 뒤 채워 주세요.`); return report; }
     if (night) report.warnings.push('날짜마다 주간·야간 두 칸인 양식입니다. 야간 근무는 보고에서 구분하지 않으므로 주간 칸만 채웠습니다.');
     const [dy, dm] = (months[0] || '').split('-').map(Number);
-    if (months.length === 1 && days.some(d => d.y) && !days.some(d => d.y === dy && d.m === dm)) report.warnings.push(`양식 날짜는 ${days.find(d => d.y).y}-${String(days.find(d => d.y).m).padStart(2, '0')} 기준입니다. 일(日) 번호로 맞춰 채웠으니 양식의 기준 월 칸을 ${months[0]}로 바꾸세요.`);
+    if (months.length === 1 && days.some(d => d.y) && !days.some(d => d.y === dy && d.m === dm)) { const h = days.find(d => d.y); report.warnings.push(`양식 날짜 칸이 ${h.y}-${String(h.m).padStart(2, '0')} 기준이라 ${months[0]} 자료를 넣을 칸이 없습니다. 양식의 기준 연·월 칸을 ${months[0]}로 바꿔 저장한 뒤 다시 올려 주세요.`); return report; }
     const wraps = days.some(x => x.seg > 0) && !days.some(x => x.m);   // 예: 5일~다음 달 4일
     const firstMonth = (() => { if (!wraps) return null; const ds = result.dates.slice().sort(); const f = ds[0]; const [fy, fm, fd] = f.split('-').map(Number); return fd >= days[0].d ? fy * 12 + fm - 1 : fy * 12 + fm - 2; })();
     const colFor = date => {
@@ -170,7 +172,7 @@
 
     // 기존 값 지우기(지난달 파일을 양식으로 올린 경우): 날짜 칸의 수식 아닌 값만
     const rowsOfTable = []; for (let r = t.start; r <= Math.max(t.end, t.start); r++) rowsOfTable.push(r);
-    if (clear) for (const r of rowsOfTable) for (const d of days) for (const c of pairs ? [d.col, d.col + 1] : [d.col]) { const cell = ws.getCell(r, c); if (!isFormula(cell) && cell.value !== null && cell.value !== '') cell.value = null; }
+    if (clear) for (const r of rowsOfTable) { if (!ownText(ws, ws.getCell(r, cols.name)) || t.headerish(r)) continue; for (const d of days) for (const c of pairs ? [d.col, d.col + 1] : [d.col]) { const cell = ws.getCell(r, c); const v = cell.value; if (isFormula(cell) || v === null || v === '') continue; if (typeof v === 'number' || (typeof v === 'string' && v.trim().length <= 3)) cell.value = null; } }   // 이름 있는 줄의 숫자·짧은 표시(휴·결 등)만 지운다
 
     // 사람 행 찾기: 같은 이름 행, 없으면 빈 행
     const nameAt = r => ownText(ws, ws.getCell(r, cols.name));
