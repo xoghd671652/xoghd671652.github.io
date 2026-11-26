@@ -122,23 +122,23 @@ tr.warn td{background:var(--warnbg)}
       <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="ghost" id="tplNo">취소</button><button id="tplYes">이대로 채우기</button></div>
     </dialog>
   </div>
-  <p class="note">이 데모는 인터넷 연결 없이 브라우저 안에서만 동작하며, 입력한 내용을 서버로 보내지 않습니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
+  <p class="note">입력한 내용과 올린 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
 </main>
 
 <script>
 const SAMPLE_CHAT = `--------------- 2026년 11월 2일 월요일 ---------------
 [김반장] [오전 7:05] 11/2 한빛산단현장 출근 박도윤 이서준 최하준 정민재 (4명)
-[오반장] [오전 7:12] 푸른물류센터현장 출근: 강지호, 윤시우, 장은우
+[오반장] [오전 7:12] 한빛산단현장 2조 출근: 강지호, 윤시우, 장은우
 [김반장] [오후 5:40] 박도윤 연장 2시간
 [오반장] [오후 3:10] 장은우 오후 조퇴합니다 (반일)
 --------------- 2026년 11월 3일 화요일 ---------------
 [김반장] [오전 7:01] 한빛산단현장 출근 박도윤 이서준 최하준 정민재 한건우
-[오반장] [오전 7:20] 푸른물류센터현장 출근 강지호 윤시우 장은우
+[오반장] [오전 7:20] 한빛산단현장 2조 출근 강지호 윤시우 장은우
 [김반장] [오전 9:30] 정정: 한건우 → 오늘 안전교육만 받고 퇴근
 [오반장] [오후 6:15] 강지호 윤시우 연장 1.5시간
 --------------- 2026년 11월 4일 수요일 ---------------
 [김반장] [오전 7:03] 한빛산단현장 출근 박도윤 이서준 정민재 한건우 / 최하준 결근(병원)
-[오반장] [오전 7:15] 푸른물류센터 출근 강지호 윤시우 장은우 김태윤
+[오반장] [오전 7:15] 한빛산단현장 2조 출근 강지호 윤시우 장은우 김태윤
 [오반장] [오전 7:16] 김태윤 신규 오늘부터
 [김반장] [오후 5:50] 이서준 연장 3시간`;
 const SAMPLE_ROSTER = `박도윤
@@ -154,16 +154,20 @@ const $ = s => document.querySelector(s);
 let result = null, tab = 'sum';
 
 function parseLines(text){
-  // 카카오톡 PC 내보내기 형식과 모바일 형식을 모두 읽는다
-  const out = []; let curDate = null;
+  // 카카오톡 PC 내보내기 형식과 모바일(안드로이드·아이폰) 형식을 모두 읽는다
+  const out = []; let curDate = null; out.unknown = [];
   for (const raw of text.split(/\r?\n/)){
     const line = raw.trim(); if (!line) continue;
     let m = line.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*\S*요일/);
-    if (m && /^-+/.test(line)) { curDate = fmt(m[1],m[2],m[3]); continue; }
+    if (m && (/^-+/.test(line) || /^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\S*요일$/.test(line))) { curDate = fmt(m[1],m[2],m[3]); continue; }   // 날짜 구분 줄
     m = line.match(/^\[([^\]]+)\]\s*\[(오전|오후)\s*(\d{1,2}):(\d{2})\]\s*(.*)$/);
     if (m) { out.push({date:curDate, who:m[1], time:`${m[2]} ${m[3]}:${m[4]}`, msg:m[5], raw:line}); continue; }
     m = line.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)\s*(\d{1,2}):(\d{2}),\s*([^:]+?)\s*:\s*(.*)$/);
     if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]} ${m[5]}:${m[6]}`, msg:m[8], raw:line}); continue; }
+    m = line.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*(오전|오후)\s*(\d{1,2}):(\d{2}),\s*([^:]+?)\s*:\s*(.*)$/);   // 아이폰: 2026. 11. 24. 오전 7:42, 이름 : 내용
+    if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]} ${m[5]}:${m[6]}`, msg:m[8], raw:line}); continue; }
+    if (/(카카오톡 대화|저장한 날짜|^Talk_|님과 카카오톡)/.test(line) && !out.length) continue;   // 파일 머리말
+    if (!out.length) { out.unknown.push(line); continue; }
     if (out.length) { out[out.length-1].msg += ' ' + line; out[out.length-1].raw += '\n' + line; }
   }
   return out;
@@ -184,8 +188,11 @@ function analyze(chat, rosterText, rule){
   const msgs = parseLines(chat);
   const rec = new Map();   // key date|name -> record
   const review = [];
+  if (msgs.unknown && msgs.unknown.length) review.push({date:'-', name:'-', reason:`형식을 알 수 없는 줄 ${msgs.unknown.length}개(카카오톡 내보내기 형식인지 확인)`, src:msgs.unknown.slice(0, 3).join(' / ')});
   const key = (d,n) => d + '|' + n;
-  const hangulNames = s => (s.match(/[가-힣]{2,4}/g) || []).filter(w => !/^(시간|출근|연장|조퇴|반일|결근|퇴근|정정|취소|수정)/.test(w));
+  // 이름 후보: 띄어쓰기 단위 낱말. 명단 이름으로 시작하면(박도윤님·박도윤씨) 그 이름, 아니면 2~4자 낱말 중 동사·근태어가 아닌 것
+  const rosterKo = roster.filter(n => /^[가-힣]+$/.test(n)).sort((a, b) => b.length - a.length);
+  const hangulNames = s => { const out = []; for (const w of (s.match(/[가-힣]+/g) || [])) { const r = rosterKo.find(n => w.startsWith(n)); if (r) { out.push(r); continue; } if (w.length >= 2 && w.length <= 4 && !/^(시간|출근|연장|조퇴|반일|결근|퇴근|정정|취소|수정|작업|오늘|내일|어제)/.test(w) && !/(니다|어요|아요|했음|해요|예요|이요|함)$/.test(w)) out.push(w); } return out; };
   const latin = roster.filter(n => !/^[가-힣]+$/.test(n)).map(n => [n, new RegExp('(^|[^A-Za-z])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Za-z]|$)', 'i')]);   // 영문 등 한글 아닌 이름
   const STOP = new Set(['출근','연장','시간','오늘','오후','오전','조퇴','반일','결근','병원','정정','신규','부터','합니다','퇴근','안전교육','받고','현장','명','오늘부터','만','시간반','취소','수정','했습니다','합니다만']);
 
@@ -207,6 +214,7 @@ function analyze(chat, rosterText, rule){
       const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
       const known = names.filter(n => rosterSet.has(n)).concat(latin.filter(([, re]) => re.test(seg)).map(([n]) => n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
+      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && rosterSet.has((m.who || '').trim())) known.push(m.who.trim());   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
 
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
       const people = [...new Set(known.concat(unknown))];
