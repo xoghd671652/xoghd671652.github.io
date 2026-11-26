@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>단톡 보고 정리기</title>
 <script src="xlsx.full.min.js"></script>
+<script src="exceljs.min.js"></script>
+<script src="template.js"></script>
 <style>
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--sub:#6b6b70;--line:#e3e1dc;--acc:#2f6f5e;--warn:#b5651d;--warnbg:#fdf1e6;--ok:#2f6f5e}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161618;--card:#1f1f22;--ink:#ececee;--sub:#9a9aa0;--line:#333338;--acc:#6fbfa6;--warn:#e7a35c;--warnbg:#2e2418}}
@@ -35,6 +37,9 @@ button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)
 .tabs button{background:transparent;color:var(--sub);border:1px solid var(--line)}
 .tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .tw{overflow-x:auto}
+.tpl{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+.tpl input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+#tplInfo{white-space:pre-line}
 select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);color:var(--ink);font:inherit;max-width:100%}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
@@ -81,17 +86,29 @@ tr.warn td{background:var(--warnbg)}
       <button data-t="sum" class="on">사람별 공수표</button>
       <button data-t="det">상세 내역</button>
       <button data-t="rev">확인 필요</button>
-      <span style="flex:1"></span>
-      <select id="xform" aria-label="엑셀 양식">
-        <option value="basic">기본 (시트 3개)</option>
-        <option value="month">월간 공수현황 (달력형)</option>
-        <option value="split">근무·연장 분리형</option>
-        <option value="hours">근무시간 기록형</option>
-      </select>
-      <button id="xlsx">엑셀 내려받기</button>
     </div>
     <div class="tw" id="view"></div>
-    <p class="note">현재 가상 엑셀 양식 4종 중에서 골라 내려받을 수 있습니다. 현장별 칸 이름·순서·소계 위치 맞춤은 개발 계획입니다. 금액·단가 계산은 하지 않습니다.</p>
+    <div class="tpl">
+      <label>4. 엑셀로 받기</label>
+      <div class="tabs" id="tplTabs">
+        <button data-m="basic" class="on">기본 표</button>
+        <button data-m="file">우리 양식 파일에 채우기</button>
+        <button data-m="desc">양식을 말로 설명하기</button>
+      </div>
+      <div id="tplFile" hidden>
+        <input type="file" id="tplInput" accept=".xlsx">
+        <p class="note">쓰시는 공수표 엑셀(.xlsx)을 올리면 성명 칸과 날짜 칸을 찾아 그 양식에 채워서 돌려드립니다. 서식·수식은 그대로 둡니다. 파일은 브라우저 안에서만 읽고 서버로 보내지 않습니다. .xls 파일은 엑셀에서 .xlsx로 저장한 뒤 올려 주세요.</p>
+      </div>
+      <div id="tplDesc" hidden>
+        <input id="tplText" type="text" value="순번, 현장, 성명, 직종, 1~31, 합계, 출력일수, 비고" aria-label="칸 순서">
+        <p class="note">칸 이름을 쉼표로 적으면 그 순서로 공수표를 만듭니다. 날짜 칸은 1~31, 날짜마다 근무·연장 두 칸이면 1~31(근무/OT)로 적어 주세요.</p>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="tplUnit" aria-label="칸에 넣을 값"><option value="md">칸에 공수 넣기</option><option value="hours">칸에 시간 넣기 (1공수=8시간 + 연장)</option></select>
+        <button id="xlsx">엑셀 내려받기</button>
+      </div>
+      <p class="note" id="tplInfo"></p>
+    </div>
   </div>
   <p class="note">이 데모는 인터넷 연결 없이 브라우저 안에서만 동작하며, 입력한 내용을 서버로 보내지 않습니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
 </main>
@@ -268,66 +285,8 @@ function render(){
 const show = v => String(+v.toFixed(6));          // 화면 표시용(부동소수 잡음 제거)
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-// ── 현장 양식 예시: 같은 정리 결과를 여러 공수표 형태로 내보낸다 (금액·단가는 다루지 않음)
-const DOW = '일월화수목금토';
-const HOURS_PER_MD = 8;   // 근무시간 기록형: 1공수 = 8시간으로 환산
-const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-function monthDays(dates){   // 첫 날짜가 속한 달 1일 ~ 마지막 날짜가 속한 달 말일
-  const f = dates[0], l = dates[dates.length-1], out = [];
-  for (let d = new Date(+f.slice(0,4), +f.slice(5,7)-1, 1), e = new Date(+l.slice(0,4), +l.slice(5,7), 0); d <= e; d.setDate(d.getDate()+1)) out.push(ymd(d));
-  return out;
-}
-function formSheet(form){
-  const {rows, dates, names} = result;
-  const days = monthDays(dates);
-  const at = (d, n) => rows.find(x => x.date === d && x.name === n);
-  const siteOf = n => [...new Set(rows.filter(r => r.name === n && r.site).map(r => r.site))].join(', ');
-  const noteOf = n => [...new Set(rows.filter(r => r.name === n).flatMap(r => r.note.concat(r.flag ? ['확인 필요'] : [])))].join(', ');
-  const add = a => a.reduce((t, v) => t + (typeof v === 'number' ? v : 0), 0);
-  const period = days[0].slice(0,7) === days[days.length-1].slice(0,7) ? `${days[0].slice(0,4)}년 ${+days[0].slice(5,7)}월` : `${days[0].slice(0,7)} ~ ${days[days.length-1].slice(0,7)}`;
-  const sites = [...new Set(rows.map(r => r.site).filter(Boolean))];
-  const site = sites.length === 1 ? sites[0] : sites.length ? '여러 현장' : '현장';
-  const multiMonth = days[0].slice(0,7) !== days[days.length-1].slice(0,7);
-  const dayNo = days.map(d => multiMonth ? `${+d.slice(5,7)}/${+d.slice(8)}` : +d.slice(8)), dow = days.map(d => DOW[new Date(d + 'T00:00').getDay()]);
-  const absent = r => r && !r.flag && !r.base && !r.otH && r.note.includes('결근');   // 결근 확인된 날은 빈칸(미보고)과 구분
-  const mark = r => r && r.flag && !r.total ? '확인 필요' : null;   // 확인 목록에 걸린 0공수 날은 결근으로 단정하지 않음
-  let aoa, merges = [], name;
-  if (form === 'month') {
-    name = '공수현황';
-    aoa = [[`(데모) ${site} ${period} 공수현황`], [], ['순번','현장','성명','직종', ...dayNo, '합계','출력일수','비고'], ['','','','', ...dow, '','','']];
-    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); return mark(r) || (absent(r) ? '결근' : r && r.total ? r.total : ''); }); aoa.push([i+1, siteOf(n), n, '', ...v, add(v), v.filter(x => typeof x === 'number').length, noteOf(n)]); });
-    aoa.push(['','','일계','', ...days.map((d, j) => add(aoa.slice(4).map(r => r[4+j]))), add(aoa.slice(4).map(r => r[4+days.length])), '', '']);
-    merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
-  } else if (form === 'split') {
-    name = '근무현황';
-    aoa = [[`(데모) ${site} ${period} 근무현황 (근무=공수, O/T=연장 시간)`], [], ['순번','현장','구분','성명','공종'], ['','','','','']];
-    days.forEach((d, j) => { aoa[2].push(`${dayNo[j]}(${dow[j]})`, ''); aoa[3].push('근무','O/T'); merges.push({s:{r:2,c:5+j*2}, e:{r:2,c:6+j*2}}); });
-    aoa[2].push('근무 합계','O/T 합계(시간)','환산 공수 합계'); aoa[3].push('','','');
-    names.forEach((n, i) => { const cells = [], b = [], o = [], t = []; days.forEach(d => { const r = at(d, n); cells.push(mark(r) || (absent(r) ? '결근' : r && r.base ? r.base : ''), r && r.otH ? r.otH : ''); b.push(r ? r.base : 0); o.push(r ? r.otH : 0); t.push(r ? r.total : 0); }); aoa.push([i+1, siteOf(n), '', n, '', ...cells, add(b), add(o), add(t)]); });
-    merges.push({s:{r:0,c:0}, e:{r:0,c:8}});
-  } else {
-    name = '근무시간';
-    aoa = [[`(데모) ${site} ${period} 근무시간 체크표 (환산시간 = 기본공수 × ${HOURS_PER_MD} + 연장시간)`], [], ['No.','현장','성명', ...days.map((d, j) => `${+d.slice(5,7)}/${+d.slice(8)}(${dow[j]})`), '합계(시간)']];
-    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); if (mark(r)) return mark(r); if (absent(r)) return '결근'; const h = r ? r.base * HOURS_PER_MD + r.otH : 0; return h || ''; }); aoa.push([i+1, siteOf(n), n, ...v, add(v)]); });
-    merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
-  }
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = merges;
-  ws['!cols'] = aoa[2].map((h, c) => ({wch: c < 5 ? 12 : 6}));
-  return [ws, name];
-}
-
 function exportXlsx(){
   const {rows, review, dates, names} = result;
-  const form = ($('#xform') && $('#xform').value) || 'basic';
-  if (form !== 'basic') {
-    const wb = XLSX.utils.book_new(); let name = '확인필요';
-    if (dates.length) { const [ws, nm] = formSheet(form); name = nm; XLSX.utils.book_append_sheet(wb, ws, nm); }   // 집계할 행이 없으면 확인 필요 시트만
-    else if (!review.length) { alert('내보낼 내용이 없습니다.'); return; }
-    if (review.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(review.map(v=>({날짜:v.date, 이름:v.name, 확인할내용:v.reason, 근거보고:v.src}))), '확인 필요');
-    XLSX.writeFile(wb, `공수정리_${name}_${dates[0]||''}_${dates[dates.length-1]||''}.xlsx`);
-    return;
-  }
   const wb = XLSX.utils.book_new();
   const sumAoa = [['이름', ...dates, '합계']].concat(names.map(n=>{ let t=0; const cells = dates.map(d=>{ const r=rows.find(x=>x.date===d&&x.name===n); if(!r) return ''; t+=r.total; return r.total; }); return [n, ...cells, t]; }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumAoa), '사람별 공수표');
@@ -343,7 +302,57 @@ $('#run').onclick = () => {
   result = analyze($('#chat').value, $('#roster').value, rule); tab = 'sum'; render();
 };
 document.querySelectorAll('.tabs [data-t]').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
-$('#xlsx').onclick = () => { if (!window.XLSX) { alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; } exportXlsx(); };
+// ── 엑셀로 받기: 기본 표 / 고객 양식 파일에 채우기 / 말로 설명한 양식
+let tplMode = 'basic', tplBuf = null, tplName = '';
+document.querySelectorAll('#tplTabs button').forEach(b => b.onclick = () => {
+  tplMode = b.dataset.m;
+  document.querySelectorAll('#tplTabs button').forEach(x => x.classList.toggle('on', x === b));
+  $('#tplFile').hidden = tplMode !== 'file'; $('#tplDesc').hidden = tplMode !== 'desc'; $('#tplInfo').textContent = '';
+});
+const info = t => { $('#tplInfo').textContent = t; };
+function saveBuffer(buf, name){
+  const url = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+const tplOpts = () => ({ unit: $('#tplUnit').value, hoursPerMd: 8 });
+function reportText(rep){
+  if (!rep.ok) return '채우지 못했습니다. ' + rep.warnings.join(' ');
+  const st = rep.structure, c = st.cols;
+  const lines = [`시트 「${rep.sheet}」에 ${rep.placed.length}명을 채웠습니다. (성명 ${c.name}열, 날짜 칸 ${st.dayCount}개${st.pairs ? '·근무/O·T 두 칸' : ''}${c.total ? `, 합계 ${c.total}열` : ''}, ${st.start}행부터)`];
+  if (rep.skipped.length) lines.push(`비워 둔 칸 ${rep.skipped.length}개: ` + rep.skipped.slice(0, 5).join(' / ') + (rep.skipped.length > 5 ? ' …' : ''));
+  rep.warnings.forEach(w => lines.push('주의: ' + w));
+  return lines.join('\n');
+}
+$('#tplInput').onchange = async e => {
+  const f = e.target.files[0]; tplBuf = null; tplName = '';
+  if (!f) return;
+  if (!/\.xlsx$/i.test(f.name)) { info('.xlsx 파일만 읽을 수 있습니다. 엑셀에서 「다른 이름으로 저장 → Excel 통합 문서(.xlsx)」로 바꿔 주세요.'); return; }
+  tplBuf = await f.arrayBuffer(); tplName = f.name;
+  try {
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(tplBuf.slice(0));
+    const rep = Tmpl.fillTemplate(wb, result, tplOpts());   // 미리 확인만 (저장은 내려받기 때)
+    info(rep.ok ? `양식을 읽었습니다. ${reportText(rep).replace(/^시트 「(.+?)」에 \d+명을 채웠습니다\./, '시트 「$1」에 채울 수 있습니다.')}` : reportText(rep));
+  } catch (err) { info('파일을 읽지 못했습니다: ' + err.message); tplBuf = null; }
+};
+$('#xlsx').onclick = async () => {
+  if (!result) return;
+  if (tplMode === 'basic') { if (!window.XLSX) { info('엑셀 라이브러리를 불러오지 못했습니다.'); return; } exportXlsx(); return; }
+  if (!window.ExcelJS || !window.Tmpl) { info('양식 기능을 불러오지 못했습니다. 새로고침해 주세요.'); return; }
+  if (tplMode === 'file') {
+    if (!tplBuf) { info('먼저 공수표 양식 파일(.xlsx)을 올려 주세요.'); return; }
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(tplBuf.slice(0));
+    const rep = Tmpl.fillTemplate(wb, result, tplOpts());
+    info(reportText(rep));
+    if (!rep.ok) return;
+    saveBuffer(await wb.xlsx.writeBuffer(), tplName.replace(/\.xlsx$/i, '') + '_채움.xlsx');
+  } else {
+    const out = Tmpl.buildFromDescription(ExcelJS, $('#tplText').value, result, tplOpts());
+    if (out.error) { info(out.error); return; }
+    info(`설명하신 칸 순서로 ${result.names.length}명 공수표를 만들었습니다.`);
+    saveBuffer(await out.wb.xlsx.writeBuffer(), `공수표_${(result.dates[0]||'').slice(0,7)}.xlsx`);
+  }
+};
 if (typeof module !== 'undefined') module.exports = {parseLines, analyze};
 </script>
 </body>
