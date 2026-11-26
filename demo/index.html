@@ -246,10 +246,13 @@ function analyze(chat, rosterText, rule){
       }
       // 보고에 적힌 공수 숫자("연장(1.5)", "1.5공수")는 그대로 쓴다
       const dmd = seg.match(/연장\s*[\(（]\s*(\d+(?:\.\d+)?)\s*[\)）]/) || seg.match(/(\d+(?:\.\d+)?)\s*공수/);
-      if (dmd && !isCorrection) { for (const n of new Set(known)) { const r = upsert(n,{src:m.raw}); if (r.override != null && r.override !== +dmd[1]) { r.flag = true; flag(m.date, n, '같은 날 공수 숫자가 다르게 두 번 나옴(직접 확인)', m.raw); } r.override = +dmd[1]; r.note.push('보고 공수 ' + dmd[1]); } }
+      const mdNums = [...new Set((seg.match(/연장\s*[\(（]\s*\d+(?:\.\d+)?\s*[\)）]|\d+(?:\.\d+)?\s*공수/g) || []).map(x => +x.match(/\d+(?:\.\d+)?/)[0]))];
+      if (dmd && !isCorrection && mdNums.length > 1) { for (const n of new Set(known)) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '한 보고에 서로 다른 공수 숫자가 있음(사람별 직접 확인)', m.raw); } }
+      else if (dmd && !isCorrection) { for (const n of new Set(known)) { const r = upsert(n,{src:m.raw}); if (r.override != null && r.override !== +dmd[1]) { r.flag = true; flag(m.date, n, '같은 날 공수 숫자가 다르게 두 번 나옴(직접 확인)', m.raw); } r.override = +dmd[1]; r.note.push('보고 공수 ' + dmd[1]); } }
       // 퇴근 시각("7시30분 퇴근", "19:30 퇴근", "8시반 퇴근")
-      const et = seg.match(/(\d{1,2})\s*(?::|시)\s*(반|\d{1,2})?\s*분?\s*(?:에\s*)?퇴근/);
-      if (et && !isCorrection) { let h = +et[1]; const mi = et[2] === '반' ? 30 : +(et[2] || 0); if (h < 12) h += 12; for (const n of new Set(known)) { const r = upsert(n,{src:m.raw}); r.endMin = Math.max(r.endMin || 0, h * 60 + mi); } }
+      // '오전·새벽'이 없으면 퇴근 시각은 오후로 본다
+      const et = seg.match(/(오전|오후|저녁|밤|새벽)?\s*(\d{1,2})\s*(?::|시)\s*(반|\d{1,2})?\s*분?\s*(?:에\s*)?퇴근/);
+      if (et && !isCorrection) { let h = +et[2]; const mi = et[3] === '반' ? 30 : +(et[3] || 0); if (/오전|새벽/.test(et[1] || '')) { if (h === 12) h = 0; } else if (h < 12) h += 12; for (const n of new Set(known)) { const r = upsert(n,{src:m.raw}); r.endMin = Math.max(r.endMin || 0, h * 60 + mi); } }
       const ot = dmd ? undefined : parseOt(seg);
       if (ot !== undefined && !isCorrection) {   // 정정·취소가 섞인 보고는 아래 정정 규칙으로 확인 목록에 간다
         const who = [...new Set(known)];   // 명단에 있는 사람만 합산. 명단 밖 후보는 확인 전까지 더하지 않는다
@@ -285,7 +288,11 @@ function analyze(chat, rosterText, rule){
   for (const r of rows){
     const table = (rule.table || []).slice().sort((a, b) => a.min - b.min);
     const lookup = mi => { let v = null; for (const t of table) if (mi >= t.min) v = t.md; return v; };
-    if (r.override != null) { r.total = r.override; r.otMd = r.total - r.base; }   // 보고에 적힌 공수
+    if (r.override != null) {   // 보고에 적힌 공수. 연장 시간은 퇴근 시각이나 1시간당 공수로 되짚어 둔다(시간 양식용)
+      r.total = r.override; r.otMd = r.total - r.base;
+      if (r.endMin && table.length) r.otH = Math.max(0, (r.endMin - table[0].min) / 60);
+      else if (!r.otH && r.otMd > 0 && rule.ot > 0) r.otH = r.otMd / rule.ot;
+    }
     else if (rule.mode === 'end' && table.length && r.base >= rule.full && (r.endMin || r.otH)) {   // 퇴근 시각 기준표
       const end = r.endMin || table[0].min + r.otH * 60;
       const v = lookup(end); r.total = v == null ? r.base : Math.max(v, r.base); r.otMd = r.total - r.base;
