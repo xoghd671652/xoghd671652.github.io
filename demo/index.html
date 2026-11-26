@@ -214,7 +214,8 @@ function analyze(chat, rosterText, rule){
       const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
       const known = names.filter(n => rosterSet.has(n)).concat(latin.filter(([, re]) => re.test(seg)).map(([n]) => n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
-      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && !/[A-Za-z]{2,}/.test(seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
+      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && !/[A-Za-z]{2,}/.test(site ? seg.split(site).join('') : seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
+      if (/출근/.test(seg) && !known.length && !unknown.length && !/\d+\s*명/.test(seg)) review.push({date:m.date, name:'(이름 없음)', reason:'출근 대상 이름을 찾지 못함(직접 확인)', src:m.raw});
 
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
       const people = [...new Set(known.concat(unknown))];
