@@ -219,8 +219,8 @@ function analyze(chat, rosterText, rule){
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
       const people = [...new Set(known.concat(unknown))];
       const cats = ['출근', '연장', '반일|조퇴', '결근'].filter(k => new RegExp(k).test(seg));
-      if (/안\s*(함|했|해|하|나|왔|옴)|않|못\s*[가-힣]|미출근|불참|없음|내일|모레|예정|할\s*예정/.test(seg) && people.length) {   // 부정·예정 표현은 자동 반영하지 않음
-        for (const n of people) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '부정·예정 표현이 있는 보고(직접 확인)', m.raw); }
+      if (/안\s*(함|했|해|하|나|왔|옴)|않|못\s*[가-힣]|미출근|불참|없음|내일|모레|예정|할\s*예정|\?|나요|까요|했니|했냐|맞나/.test(seg) && people.length) {   // 부정·예정·질문 표현은 자동 반영하지 않음
+        for (const n of people) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '부정·예정·질문 표현이 있는 보고(직접 확인)', m.raw); }
         continue;
       }
       if (cats.length > 1 && people.length > 1) {
@@ -239,6 +239,7 @@ function analyze(chat, rosterText, rule){
         const who = [...new Set(known)];   // 명단에 있는 사람만 합산. 명단 밖 후보는 확인 전까지 더하지 않는다
         const why = ot === null ? '연장 시간을 읽지 못함(직접 확인)'
           : (seg.match(/연장/g) || []).length > 1 ? '한 보고에 연장이 여러 번 나옴(사람별 직접 확인)'
+          : (() => { let rest = seg.slice(0, seg.indexOf('연장')); for (const n of who) { if (!rest.includes(n)) return true; rest = rest.split(n).join(''); } if (site) rest = rest.split(site).join(''); return /[가-힣]/.test(rest.replace(/님|씨|반장|\d+조|금일|오늘|은|는/g, '')); })() ? '연장 대상이 분명하지 않음(다른 내용과 섞인 보고, 직접 확인)'
           : !who.length ? '연장 대상 이름을 찾지 못함(직접 확인)' : '';
         if (!why) for (const n of who) { const r = upsert(n,{src:m.raw}); if (r.otH) { r.flag = true; flag(m.date, n, '같은 날 연장 보고가 또 있음(중복 전송인지 확인)', m.raw); } r.otH += ot; }
         else if (who.length) for (const n of who) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, why, m.raw); }
