@@ -7,11 +7,12 @@
   const NAME_RE = /^(성명|이름|근로자명|작업자|name|성명\(한글\))$/i;
   const TOTAL_RE = /^(합계|총공수|공수합계|월합계|공수계|계|총계)$/;
   const DAYS_RE = /^(출력일수|출역일수|근무일수|출근일수|일수)$/;
-  const SITE_RE = /^(현장|현장명|소속|site)$/i;
+  const SITE_RE = /^(현장|현장명|site)$/i;   // '소속'은 업체명일 수 있어 채우지 않는다
   const JOB_RE = /^(직종|공종)$/;
   const NOTE_RE = /^(비고|특이사항)$/;
   const WORK_RE = /^(근무|주간|정상|공수)$/i;
-  const OT_RE = /^(o\/?t|연장|야간|잔업)$/i;
+  const OT_RE = /^(o\/?t|연장|잔업)$/i;
+  const NIGHT_RE = /^야간$/;
   const STOP_RE = /^(합계|소계|일계|계|총계|총원)$/;
 
   // 셀 값 읽기: 수식이면 저장된 결과, 없으면 간단한 수식(DATE, 참조+1, 참조)을 직접 계산
@@ -97,8 +98,9 @@
       // 날짜마다 두 칸(근무/O·T): 다음 행에 근무·O/T 라벨이 있으면
       const sub = r + 1 === dayRow ? r + 2 : r + 1;
       const labelAt = c => norm(cellValue(ws, ws.getCell(sub, c)));
-      const pairs = days.slice(0, 3).some(d => OT_RE.test(labelAt(d.col + 1)));   // 첫 칸 라벨이 비어 있는 양식도 있어 앞 3일을 본다
-      const hasLabels = days.slice(0, 3).some(d => WORK_RE.test(labelAt(d.col)) || OT_RE.test(labelAt(d.col + 1)));
+      const night = days.slice(0, 3).some(d => NIGHT_RE.test(labelAt(d.col + 1)));   // 주간/야간 두 칸: 야간은 채우지 않는다
+      const pairs = night || days.slice(0, 3).some(d => OT_RE.test(labelAt(d.col + 1)));   // 첫 칸 라벨이 비어 있는 양식도 있어 앞 3일을 본다
+      const hasLabels = pairs || days.slice(0, 3).some(d => WORK_RE.test(labelAt(d.col)));
       const cols = { name: nameCol };
       for (let c = 1; c <= maxC; c++) {
         const h = norm(cellValue(ws, ws.getCell(r, c)));
@@ -121,7 +123,7 @@
         if (firstCells.some(t => STOP_RE.test(t)) || isTotalRow(rr)) break;
         end = rr;
       }
-      return { ws, headerRow: r, dayRow, start, end, days, pairs, cols };
+      return { ws, headerRow: r, dayRow, start, end, days, pairs, night, cols };
     }
     return null;
   }
@@ -152,9 +154,10 @@
     const t = pickSheet(wb, months);
     const report = { ok: false, sheet: null, placed: [], unplaced: [], skipped: [], warnings: [] };
     if (!t) { report.warnings.push('양식에서 성명 칸과 날짜 칸(1~31일)을 찾지 못했습니다.'); return report; }
-    const { ws, days, pairs, cols } = t;
+    const { ws, days, pairs, night, cols } = t;
     report.sheet = ws.name; report.structure = { headerRow: t.headerRow, start: t.start, end: t.end, dayCount: days.length, pairs, cols: Object.fromEntries(Object.entries(cols).map(([k, c]) => [k, colName(c)])) };
-    if (months.length > 1 && !days.some(d => d.m) && !days.some(d => d.seg > 0)) report.warnings.push('자료가 여러 달인데 양식 날짜 칸에 월이 없습니다. 한 달씩 나눠 채우세요.');
+    if (months.length > 1 && !days.some(d => d.m) && !days.some(d => d.seg > 0)) { report.warnings.push(`자료가 여러 달(${months.join(', ')})인데 양식 날짜 칸에 월이 없어 어느 달 칸인지 정할 수 없습니다. 한 달씩 나눠 정리한 뒤 채워 주세요.`); return report; }
+    if (night) report.warnings.push('날짜마다 주간·야간 두 칸인 양식입니다. 야간 근무는 보고에서 구분하지 않으므로 주간 칸만 채웠습니다.');
     const [dy, dm] = (months[0] || '').split('-').map(Number);
     if (months.length === 1 && days.some(d => d.y) && !days.some(d => d.y === dy && d.m === dm)) report.warnings.push(`양식 날짜는 ${days.find(d => d.y).y}-${String(days.find(d => d.y).m).padStart(2, '0')} 기준입니다. 일(日) 번호로 맞춰 채웠으니 양식의 기준 월 칸을 ${months[0]}로 바꾸세요.`);
     const wraps = days.some(x => x.seg > 0) && !days.some(x => x.m);   // 예: 5일~다음 달 4일
@@ -172,8 +175,14 @@
     // 사람 행 찾기: 같은 이름 행, 없으면 빈 행
     const nameAt = r => ownText(ws, ws.getCell(r, cols.name));
     const used = new Set();
+    const dupNames = new Set(); { const seen = new Set(); for (const r of rowsOfTable) { const n = nameAt(r); if (!n) continue; if (seen.has(n)) dupNames.add(n); seen.add(n); } }
+    const dataNames = new Set(result.names.map(norm));
+    // 자료에 없는 사람 줄: 일별 값을 지웠으니 고정 합계·출력일수도 비운다(수식이면 그대로)
+    if (clear) for (const r of rowsOfTable) { const n = nameAt(r); if (!n || dataNames.has(n)) continue; for (const c of [cols.total, cols.days]) if (c && !isFormula(ws.getCell(r, c))) ws.getCell(r, c).value = null; }
+    let written = 0;
     const findRow = n => { for (const r of rowsOfTable) if (nameAt(r) === norm(n)) { used.add(r); return r; } for (const r of rowsOfTable) if (!nameAt(r) && !used.has(r)) { used.add(r); ws.getCell(r, cols.name).value = n; return r; } return 0; };
     for (const n of result.names) {
+      if (dupNames.has(norm(n))) { report.unplaced.push(n); report.warnings.push(`양식에 「${n}」이 두 줄 이상 있어 누구 줄인지 정할 수 없어 비워 두었습니다.`); continue; }
       const r = findRow(n);
       if (!r) { report.unplaced.push(n); continue; }
       let total = 0, count = 0;
@@ -182,8 +191,11 @@
         if (!c) { report.skipped.push(`${row.date} ${n}: 양식에 해당 날짜 칸 없음`); continue; }
         if (row.flag) { report.skipped.push(`${row.date} ${n}: 확인 필요라 비워 둠`); continue; }
         const v = dayValues(row, unit, hoursPerMd);
-        if (pairs) { if (v.workOnly) ws.getCell(r, c).value = v.workOnly; if (row.otH) ws.getCell(r, c + 1).value = row.otH; }
-        else if (v.one) ws.getCell(r, c).value = v.one;
+        const targets = pairs ? [[c, v.workOnly], [c + 1, night ? 0 : row.otH]] : [[c, v.one]];
+        let blocked = false;
+        for (const [cc, val] of targets) { if (!val) continue; const cell = ws.getCell(r, cc); if (isFormula(cell)) { blocked = true; continue; } cell.value = val; written++; }
+        if (blocked) report.skipped.push(`${row.date} ${n}: 날짜 칸이 수식이라 덮어쓰지 않음`);
+        if (night && row.otH) report.skipped.push(`${row.date} ${n}: 연장 ${row.otH}시간은 야간 칸에 넣지 않음`);
         total += v.one; if (v.one) count++;
       }
       if (cols.total && !isFormula(ws.getCell(r, cols.total))) ws.getCell(r, cols.total).value = total;
@@ -193,7 +205,10 @@
     }
     if (report.unplaced.length) report.warnings.push(`양식에 빈 줄이 모자라 ${report.unplaced.length}명을 넣지 못했습니다: ${report.unplaced.join(', ')}. 양식 표 안(합계 행 위)에 빈 줄을 추가해 다시 올려 주세요.`);
     wb.calcProperties = Object.assign({}, wb.calcProperties, { fullCalcOnLoad: true });   // 열 때 합계 수식 다시 계산
-    report.ok = report.placed.length > 0;
+    report.written = written;
+    report.otherSheets = []; wb.eachSheet(w => { if (w !== ws) report.otherSheets.push(w.name + (w.state && w.state !== 'visible' ? '(숨김)' : '')); });
+    report.ok = report.placed.length > 0 && written > 0;
+    if (report.placed.length && !written) report.warnings.push('채운 칸이 하나도 없습니다. 양식의 날짜·월이 자료와 맞는지 확인해 주세요.');
     return report;
   }
 
@@ -201,6 +216,8 @@
   function buildFromDescription(ExcelJS, desc, result, opts = {}) {
     const unit = opts.unit || 'md', hoursPerMd = opts.hoursPerMd || 8;
     const tokens = String(desc).split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+    const months = [...new Set(result.dates.map(d => d.slice(0, 7)))];
+    if (months.length > 1) return { error: `자료가 여러 달(${months.join(', ')})입니다. 한 달씩 나눠 정리한 뒤 만들어 주세요.` };
     const month = (result.dates[0] || '').slice(0, 7);
     const [y, m] = month.split('-').map(Number);
     const last = y ? new Date(y, m, 0).getDate() : 31;
