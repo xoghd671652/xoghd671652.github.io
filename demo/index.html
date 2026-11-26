@@ -97,18 +97,18 @@ tr.warn td{background:var(--warnbg)}
       <div class="tabs" id="tplTabs">
         <button data-m="basic" class="on">기본 표</button>
         <button data-m="file">우리 양식 파일에 채우기</button>
-        <button data-m="desc">양식을 말로 설명하기</button>
+        <button data-m="desc">칸 목록으로 새 양식 만들기</button>
       </div>
       <div id="tplFile" hidden>
         <input type="file" id="tplInput" accept=".xlsx">
-        <p class="note">쓰시는 공수표 엑셀(.xlsx)을 올리면 성명 칸과 날짜 칸을 찾아, 채우기 전에 어느 칸을 바꾸는지 먼저 보여 드립니다. 양식 모양은 바꾸지 않고 값만 넣은 사본을 내려드립니다. 오래 써 온 양식(병합 칸이 많은 양식)도 됩니다. 파일은 브라우저 안에서만 읽고 서버로 보내지 않습니다. .xls 파일은 엑셀에서 .xlsx로 저장한 뒤 올려 주세요.</p>
+        <p class="note">쓰시는 공수표 엑셀(.xlsx)을 올리면 성명 칸과 날짜 칸을 찾아, 채우기 전에 어느 칸을 바꾸는지 먼저 보여 드립니다. 양식 모양은 바꾸지 않고 값만 넣은 사본을 내려드립니다. 병합 칸이 많은 오래된 양식도 대부분 읽을 수 있으니, 채우기 전 미리보기에서 칸이 맞는지 확인해 주세요. 파일은 브라우저 안에서만 읽고 서버로 보내지 않습니다. .xls 파일은 엑셀에서 .xlsx로 저장한 뒤 올려 주세요.</p>
       </div>
       <div id="tplDesc" hidden>
         <input id="tplText" type="text" value="순번, 현장, 성명, 직종, 1~31, 합계, 출력일수, 비고" aria-label="칸 순서">
         <p class="note">칸 이름을 쉼표로 적으면 그 순서로 공수표를 만듭니다. 날짜 칸은 1~31, 날짜마다 근무·연장 두 칸이면 1~31(근무/OT)로 적어 주세요.</p>
       </div>
       <div class="row" style="margin-top:8px">
-        <select id="tplUnit" aria-label="칸에 넣을 값"><option value="md">칸에 공수 넣기</option><option value="hours">칸에 시간 넣기 (1공수=8시간 + 연장)</option></select>
+        <select id="tplUnit" aria-label="칸에 넣을 값"><option value="md">칸에 공수 넣기</option><option value="hours">칸에 시간 넣기 (내부 집계용 환산: 1공수=8시간 + 연장)</option></select>
         <button id="xlsx">엑셀 내려받기</button>
       </div>
       <p class="note" id="tplInfo"></p>
@@ -122,25 +122,25 @@ tr.warn td{background:var(--warnbg)}
       <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="ghost" id="tplNo">취소</button><button id="tplYes">이대로 채우기</button></div>
     </dialog>
   </div>
-  <p class="note">입력한 내용과 올린 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
+  <p class="note">입력한 내용과 올린 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 정식 버전을 만든다면 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정하는 방식으로 만들 계획입니다.</p>
 </main>
 
 <script>
 const SAMPLE_CHAT = `--------------- 2026년 11월 2일 월요일 ---------------
 [김반장] [오전 7:05] 11/2 한빛산단현장 출근 박도윤 이서준 최하준 정민재 (4명)
 [오반장] [오전 7:12] 한빛산단현장 2조 출근: 강지호, 윤시우, 장은우
-[김반장] [오후 5:40] 박도윤 연장 2시간
-[오반장] [오후 3:10] 장은우 오후 조퇴합니다 (반일)
+[오반장] [오후 12:10] 장은우 오전 근무 후 조퇴 (반일)
+[김반장] [오후 7:10] 박도윤 연장 2시간
 --------------- 2026년 11월 3일 화요일 ---------------
 [김반장] [오전 7:01] 한빛산단현장 출근 박도윤 이서준 최하준 정민재 한건우
 [오반장] [오전 7:20] 한빛산단현장 2조 출근 강지호 윤시우 장은우
 [김반장] [오전 9:30] 정정: 한건우 → 오늘 안전교육만 받고 퇴근
-[오반장] [오후 6:15] 강지호 윤시우 연장 1.5시간
+[오반장] [오후 6:40] 강지호 윤시우 연장 1.5시간
 --------------- 2026년 11월 4일 수요일 ---------------
 [김반장] [오전 7:03] 한빛산단현장 출근 박도윤 이서준 정민재 한건우 / 최하준 결근(병원)
 [오반장] [오전 7:15] 한빛산단현장 2조 출근 강지호 윤시우 장은우 김태윤
 [오반장] [오전 7:16] 김태윤 신규 오늘부터
-[김반장] [오후 5:50] 이서준 연장 3시간`;
+[김반장] [오후 8:55] 이서준 연장 3시간`;
 const SAMPLE_ROSTER = `박도윤
 이서준
 최하준
@@ -192,7 +192,7 @@ function analyze(chat, rosterText, rule){
   const key = (d,n) => d + '|' + n;
   // 이름 후보: 띄어쓰기 단위 낱말. 명단 이름으로 시작하면(박도윤님·박도윤씨) 그 이름, 아니면 2~4자 낱말 중 동사·근태어가 아닌 것
   const rosterKo = roster.filter(n => /^[가-힣]+$/.test(n)).sort((a, b) => b.length - a.length);
-  const hangulNames = s => { const out = []; for (const w of (s.match(/[가-힣]+/g) || [])) { const r = rosterKo.find(n => w.startsWith(n)); if (r) { out.push(r); continue; } if (w.length >= 2 && w.length <= 4 && !/^(시간|출근|연장|조퇴|반일|결근|퇴근|정정|취소|수정|작업|오늘|내일|어제)/.test(w) && !/(니다|어요|아요|했음|해요|예요|이요|함)$/.test(w)) out.push(w); } return out; };
+  const hangulNames = s => { const out = []; for (const w of (s.match(/[가-힣]+/g) || [])) { const r = rosterKo.find(n => w.startsWith(n)); if (r) { out.push(r); continue; } if (w.length >= 2 && w.length <= 4 && !/^(시간|출근|연장|조퇴|반일|결근|퇴근|정정|취소|수정|작업|오늘|내일|어제|오전|오후|점심|저녁|아침|근무|완료|도착|마치|먹고|이후)/.test(w) && !/(니다|어요|아요|했음|해요|예요|이요|함)$/.test(w)) out.push(w); } return out; };
   const latin = roster.filter(n => !/^[가-힣]+$/.test(n)).map(n => [n, new RegExp('(^|[^A-Za-z])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Za-z]|$)', 'i')]);   // 영문 등 한글 아닌 이름
   const STOP = new Set(['출근','연장','시간','오늘','오후','오전','조퇴','반일','결근','병원','정정','신규','부터','합니다','퇴근','안전교육','받고','현장','명','오늘부터','만','시간반','취소','수정','했습니다','합니다만']);
 
@@ -322,7 +322,7 @@ $('#run').onclick = () => {
   result = analyze($('#chat').value, $('#roster').value, rule); tab = 'sum'; render();
 };
 document.querySelectorAll('.tabs [data-t]').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
-// ── 엑셀로 받기: 기본 표 / 고객 양식 파일에 채우기 / 말로 설명한 양식
+// ── 엑셀로 받기: 기본 표 / 고객 양식 파일에 채우기 / 칸 목록으로 새 양식
 let tplMode = 'basic', tplBuf = null, tplName = '';
 document.querySelectorAll('#tplTabs button').forEach(b => b.onclick = () => {
   tplMode = b.dataset.m;
