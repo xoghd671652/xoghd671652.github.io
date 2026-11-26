@@ -79,8 +79,16 @@ tr.warn td{background:var(--warnbg)}
       <div class="set">
         <span>정상 출근</span><input id="full" type="number" step="0.1" value="1">
         <span>반일·조퇴</span><input id="half" type="number" step="0.1" value="0.5">
+        <span>연장 계산</span><select id="otMode" aria-label="연장 계산 방식"><option value="hour">연장 시간 × 1시간당 공수</option><option value="end">퇴근 시각 기준표</option></select>
         <span>연장 1시간당</span><input id="ot" type="number" step="0.025" value="0.125">
       </div>
+      <div id="endBox" hidden style="margin-top:8px">
+        <textarea id="endTable" spellcheck="false" style="min-height:90px" aria-label="퇴근 시각 기준표">17:00=1
+19:30=1.4
+20:00=1.5</textarea>
+        <p class="note">한 줄에 "퇴근 시각=그날 공수". 보고의 "7시30분 퇴근", "19:30 퇴근"을 이 표로 바꿉니다. "연장 2시간"은 첫 줄 시각(정시)에 더해 계산합니다.</p>
+      </div>
+      <p class="note">보고에 "연장(1.5)", "1.5공수"처럼 공수 숫자가 직접 적혀 있으면 그 숫자를 그대로 씁니다.</p>
     </div>
   </div>
 
@@ -215,7 +223,7 @@ function analyze(chat, rosterText, rule){
       const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
       const known = names.filter(n => rosterSet.has(n)).concat(latin.filter(([, re]) => re.test(seg)).map(([n]) => n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
-      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && !/\d+\s*명/.test(seg) && !/[A-Za-z]{2,}/.test(site ? seg.split(site).join('') : seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
+      if (!known.length && !unknown.length && /출근|퇴근|연장|공수|반일|조퇴|결근/.test(seg) && !/\d+\s*명/.test(seg) && !/[A-Za-z]{2,}/.test(site ? seg.split(site).join('') : seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
       if (/출근/.test(seg) && !known.length && !unknown.length && !/\d+\s*명/.test(seg)) review.push({date:m.date, name:'(이름 없음)', reason:'출근 대상 이름을 찾지 못함(직접 확인)', src:m.raw});
 
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
@@ -236,7 +244,13 @@ function analyze(chat, rosterText, rule){
         for (const n of known) upsert(n, {site, base: rule.full, src:m.raw});
         for (const n of unknown){ upsert(n, {site, base: rule.full, src:m.raw}); flag(m.date, n, '명단에 없는 이름(신규 인원인지 확인)', m.raw); }
       }
-      const ot = parseOt(seg);
+      // 보고에 적힌 공수 숫자("연장(1.5)", "1.5공수")는 그대로 쓴다
+      const dmd = seg.match(/연장\s*[\(（]\s*(\d+(?:\.\d+)?)\s*[\)）]/) || seg.match(/(\d+(?:\.\d+)?)\s*공수/);
+      if (dmd && !isCorrection) { for (const n of new Set(known)) { const r = upsert(n,{src:m.raw}); if (r.override != null && r.override !== +dmd[1]) { r.flag = true; flag(m.date, n, '같은 날 공수 숫자가 다르게 두 번 나옴(직접 확인)', m.raw); } r.override = +dmd[1]; r.note.push('보고 공수 ' + dmd[1]); } }
+      // 퇴근 시각("7시30분 퇴근", "19:30 퇴근", "8시반 퇴근")
+      const et = seg.match(/(\d{1,2})\s*(?::|시)\s*(반|\d{1,2})?\s*분?\s*(?:에\s*)?퇴근/);
+      if (et && !isCorrection) { let h = +et[1]; const mi = et[2] === '반' ? 30 : +(et[2] || 0); if (h < 12) h += 12; for (const n of new Set(known)) { const r = upsert(n,{src:m.raw}); r.endMin = Math.max(r.endMin || 0, h * 60 + mi); } }
+      const ot = dmd ? undefined : parseOt(seg);
       if (ot !== undefined && !isCorrection) {   // 정정·취소가 섞인 보고는 아래 정정 규칙으로 확인 목록에 간다
         const who = [...new Set(known)];   // 명단에 있는 사람만 합산. 명단 밖 후보는 확인 전까지 더하지 않는다
         const why = ot === null ? '연장 시간을 읽지 못함(직접 확인)'
@@ -252,7 +266,7 @@ function analyze(chat, rosterText, rule){
       if (/결근/.test(seg)) for (const n of known) { const r = upsert(n,{src:m.raw}); r.base = 0; r.note.push('결근'); }
       if (isCorrection && !known.length) review.push({date:m.date, name:(unknown[0]||'(이름 없음)'), reason:'정정·취소 보고(대상 직접 확인)', src:m.raw});
       if (isCorrection) for (const n of known) { const r = upsert(n,{src:m.raw}); r.flag = true; flag(m.date, n, '정정 보고: 공수 직접 확인 필요', m.raw); }
-      if (!/출근|연장|반일|조퇴|결근|정정|수정|취소/.test(seg) && known.length) for (const n of known) flag(m.date, n, '규칙에 없는 내용이 담긴 보고', m.raw);
+      if (!/출근|퇴근|연장|공수|반일|조퇴|결근|정정|수정|취소/.test(seg) && known.length) for (const n of known) flag(m.date, n, '규칙에 없는 내용이 담긴 보고', m.raw);
     }
 
     function upsert(n, {site:s, base, src}){
@@ -269,8 +283,17 @@ function analyze(chat, rosterText, rule){
 
   const rows = [...rec.values()].sort((a,b)=> a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
   for (const r of rows){
-    r.otMd = r.otH * rule.ot;   // 회사 반올림 기준이 정해지기 전에는 환산값을 그대로 두고, 표시할 때만 자릿수를 맞춘다
-    r.total = r.base + r.otMd;
+    const table = (rule.table || []).slice().sort((a, b) => a.min - b.min);
+    const lookup = mi => { let v = null; for (const t of table) if (mi >= t.min) v = t.md; return v; };
+    if (r.override != null) { r.total = r.override; r.otMd = r.total - r.base; }   // 보고에 적힌 공수
+    else if (rule.mode === 'end' && table.length && r.base >= rule.full && (r.endMin || r.otH)) {   // 퇴근 시각 기준표
+      const end = r.endMin || table[0].min + r.otH * 60;
+      const v = lookup(end); r.total = v == null ? r.base : Math.max(v, r.base); r.otMd = r.total - r.base;
+      if (r.endMin) r.otH = Math.max(0, (r.endMin - table[0].min) / 60);
+    } else {
+      r.otMd = r.otH * rule.ot;   // 회사 반올림 기준이 정해지기 전에는 환산값을 그대로 두고, 표시할 때만 자릿수를 맞춘다
+      r.total = r.base + r.otMd;
+    }
     if (!r.site && r.base > 0){ r.flag = true; review.push({date:r.date, name:r.name, reason:'현장을 알 수 없음', src:r.src.join('\n')}); }
   }
   const dates = [...new Set(rows.map(r=>r.date))].sort();
@@ -318,10 +341,12 @@ function exportXlsx(){
   XLSX.writeFile(wb, `공수정리_${dates[0]||''}_${dates[dates.length-1]||''}.xlsx`);
 }
 
+$('#otMode').onchange = () => { $('#endBox').hidden = $('#otMode').value !== 'end'; };
 $('#sample').onclick = () => { $('#chat').value = SAMPLE_CHAT; $('#roster').value = SAMPLE_ROSTER; };
 $('#clear').onclick = () => { $('#chat').value = ''; $('#out').hidden = true; result = null; };
 $('#run').onclick = () => {
-  const rule = {full:+$('#full').value, half:+$('#half').value, ot:+$('#ot').value};
+  const table = $('#endTable').value.split(/\r?\n/).map(l => l.match(/^\s*(\d{1,2}):(\d{2})\s*[=\s]\s*(\d+(?:\.\d+)?)\s*$/)).filter(Boolean).map(m => ({min: +m[1] * 60 + +m[2], md: +m[3]}));
+  const rule = {full:+$('#full').value, half:+$('#half').value, ot:+$('#ot').value, mode: $('#otMode').value, table};
   result = analyze($('#chat').value, $('#roster').value, rule); tab = 'sum'; render();
 };
 document.querySelectorAll('.tabs [data-t]').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
