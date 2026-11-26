@@ -198,8 +198,9 @@
       for (const row of result.rows.filter(x => x.name === n)) {
         const c = colFor(row.date);
         if (!c) { report.skipped.push(`${row.date} ${n}: 양식에 해당 날짜 칸 없음`); continue; }
-        if (row.flag) { report.skipped.push(`${row.date} ${n}: 확인 필요라 비워 둠`); continue; }
-        if (unit === 'hours' && row.otUnknown) { report.skipped.push(`${row.date} ${n}: 연장 시간을 몰라 시간 칸은 비워 둠`); continue; }
+        const left = () => { const v = cellValue(ws, ws.getCell(r, c)); return v === null || v === undefined || v === '' ? '비워 둠' : `기존 값 ${v} 그대로 남음(직접 확인)`; };   // '지난 값 지우기'를 끈 경우 대비
+        if (row.flag) { report.skipped.push(`${row.date} ${n}: 확인 필요 — ${left()}`); continue; }
+        if (unit === 'hours' && row.otUnknown) { report.skipped.push(`${row.date} ${n}: 연장 시간을 모름 — 시간 칸 ${left()}`); continue; }
         const v = dayValues(row, unit, hoursPerMd);
         const targets = pairs ? [[c, v.workOnly], [c + 1, night ? 0 : row.otH]] : [[c, v.one]];
         let blocked = false;
