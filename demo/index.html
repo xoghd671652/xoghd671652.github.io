@@ -316,13 +316,14 @@ function saveBuffer(buf, name){
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 const tplOpts = () => ({ unit: $('#tplUnit').value, hoursPerMd: 8 });
+const READ_FAIL = ' 병합된 칸이 아주 많거나 다른 시트가 큰 파일은 읽기 어렵습니다. 공수표 시트만 새 통합 문서로 복사(시트 탭 오른쪽 클릭 → 이동/복사 → 새 통합 문서)해서 올려 주세요.';
 // 양식 채우기: 가능하면 Worker에서(20초 넘으면 중단), Worker를 못 쓰는 환경(file:// 등)은 화면에서 바로
 function runFill(save){
   const payload = { buf: tplBuf.slice(0), result: JSON.parse(JSON.stringify(result)), opts: tplOpts(), save };
   let w; try { w = new Worker('tplworker.js'); } catch (e) { w = null; }
   if (!w) return (async () => { const wb = new ExcelJS.Workbook(); await wb.xlsx.load(payload.buf); const rep = Tmpl.fillTemplate(wb, result, payload.opts); return { rep, out: save && rep.ok ? await wb.xlsx.writeBuffer() : null }; })();
   return new Promise(resolve => {
-    const timer = setTimeout(() => { w.terminate(); resolve({ error: '파일을 20초 안에 읽지 못했습니다. 병합된 칸이 아주 많은 파일은 읽기 어렵습니다. 공수표 시트만 새 통합문서로 복사(시트 이동/복사 → 새 통합 문서)해서 올려 주세요.' }); }, 20000);
+    const timer = setTimeout(() => { w.terminate(); resolve({ error: '20초 안에 끝나지 않았습니다.' }); }, 20000);
     w.onmessage = e => { clearTimeout(timer); w.terminate(); resolve(e.data); };
     w.onerror = async ev => { clearTimeout(timer); w.terminate(); ev.preventDefault && ev.preventDefault();   // Worker 불가 → 화면에서 실행
       try { const wb = new ExcelJS.Workbook(); await wb.xlsx.load(payload.buf); const rep = Tmpl.fillTemplate(wb, result, payload.opts); resolve({ rep, out: save && rep.ok ? await wb.xlsx.writeBuffer() : null }); } catch (err) { resolve({ error: err.message }); } };
@@ -344,7 +345,7 @@ $('#tplInput').onchange = async e => {
   tplBuf = await f.arrayBuffer(); tplName = f.name;
   info('양식을 읽는 중입니다…');
   const r = await runFill(false);   // 미리 확인만 (저장은 내려받기 때)
-  if (r.error) { info('파일을 읽지 못했습니다. ' + r.error); tplBuf = null; return; }
+  if (r.error) { info(`파일을 읽지 못했습니다(${r.error}).` + READ_FAIL); tplBuf = null; return; }
   info(r.rep.ok ? `양식을 읽었습니다. ${reportText(r.rep).replace(/^시트 「(.+?)」에 \d+명을 채웠습니다\./, '시트 「$1」에 채울 수 있습니다.')}` : reportText(r.rep));
 };
 $('#xlsx').onclick = async () => {
@@ -355,7 +356,7 @@ $('#xlsx').onclick = async () => {
     if (!tplBuf) { info('먼저 공수표 양식 파일(.xlsx)을 올려 주세요.'); return; }
     info('양식에 채우는 중입니다…');
     const r = await runFill(true);
-    if (r.error) { info('파일을 읽지 못했습니다. ' + r.error); return; }
+    if (r.error) { info(`파일을 읽지 못했습니다(${r.error}).` + READ_FAIL); return; }
     info(reportText(r.rep));
     if (!r.rep.ok || !r.out) return;
     saveBuffer(r.out, tplName.replace(/\.xlsx$/i, '') + '_채움.xlsx');
