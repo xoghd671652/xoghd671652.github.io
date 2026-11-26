@@ -160,6 +160,7 @@ function parseLines(text){
     const line = raw.trim(); if (!line) continue;
     let m = line.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*\S*요일/);
     if (m && (/^-+/.test(line) || /^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\S*요일$/.test(line))) { curDate = fmt(m[1],m[2],m[3]); continue; }   // 날짜 구분 줄
+    if (/^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*(오전|오후)?\s*\d{1,2}:\d{2}$/.test(line)) { const d = line.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/); curDate = fmt(d[1],d[2],d[3]); continue; }   // 모바일 내보내기의 시각만 있는 구분 줄
     m = line.match(/^\[([^\]]+)\]\s*\[(오전|오후)\s*(\d{1,2}):(\d{2})\]\s*(.*)$/);
     if (m) { out.push({date:curDate, who:m[1], time:`${m[2]} ${m[3]}:${m[4]}`, msg:m[5], raw:line}); orphan = false; continue; }
     m = line.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)?\s*(\d{1,2}):(\d{2}),\s*([^:]+?)\s*:\s*(.*)$/);
