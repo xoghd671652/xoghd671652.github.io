@@ -293,7 +293,7 @@ function analyze(chat, rosterText, rule){
       if (r.otH) { /* 보고된 연장 시간은 그대로 둔다 */ }
       else if (rule.mode === 'end' && r.endMin && table.length) r.otH = Math.max(0, (r.endMin - table[0].min) / 60);
       else if (rule.mode !== 'end' && r.otMd > 0 && rule.ot > 0) r.otH = r.otMd / rule.ot;
-      else if (r.otMd > 0) { review.push({date:r.date, name:r.name, reason:'보고 공수만 있어 연장 시간을 알 수 없음(공수는 반영, 시간 양식만 직접 확인)', src:r.src.join('\n')}); }   // 공수는 확실하므로 행을 보류하지 않는다
+      else if (r.otMd > 0) { r.otUnknown = true; review.push({date:r.date, name:r.name, reason:'보고 공수만 있어 연장 시간을 알 수 없음(공수는 반영, 시간 양식만 직접 확인)', src:r.src.join('\n')}); }   // 공수는 확실하므로 행을 보류하지 않는다
     }
     else if (rule.mode === 'end' && table.length && r.base >= rule.full && (r.endMin || r.otH)) {   // 퇴근 시각 기준표
       const end = r.endMin || table[0].min + r.otH * 60;

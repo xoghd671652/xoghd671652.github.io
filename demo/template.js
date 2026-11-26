@@ -199,6 +199,7 @@
         const c = colFor(row.date);
         if (!c) { report.skipped.push(`${row.date} ${n}: 양식에 해당 날짜 칸 없음`); continue; }
         if (row.flag) { report.skipped.push(`${row.date} ${n}: 확인 필요라 비워 둠`); continue; }
+        if (unit === 'hours' && row.otUnknown) { report.skipped.push(`${row.date} ${n}: 연장 시간을 몰라 시간 칸은 비워 둠`); continue; }
         const v = dayValues(row, unit, hoursPerMd);
         const targets = pairs ? [[c, v.workOnly], [c + 1, night ? 0 : row.otH]] : [[c, v.one]];
         let blocked = false;
@@ -252,10 +253,10 @@
     result.names.forEach((n, i) => {
       const rs = result.rows.filter(x => x.name === n); let total = 0, count = 0;
       const cells = plan.map(p => {
-        if (p.day) { const r = rs.find(x => +x.date.slice(8) === p.day && x.date.slice(0, 7) === month); if (!r || r.flag) return null; const v = dayValues(r, unit, hoursPerMd); if (p.part === 'ot') return r.otH || null; if (p.part === 'work') return v.workOnly || null; return v.one || null; }
+        if (p.day) { const r = rs.find(x => +x.date.slice(8) === p.day && x.date.slice(0, 7) === month); if (!r || r.flag || (unit === 'hours' && r.otUnknown)) return null; const v = dayValues(r, unit, hoursPerMd); if (p.part === 'ot') return r.otH || null; if (p.part === 'work') return v.workOnly || null; return v.one || null; }
         return null;
       });
-      rs.filter(r => !r.flag && r.date.slice(0, 7) === month).forEach(r => { const v = dayValues(r, unit, hoursPerMd); total += v.one; if (v.one) count++; });
+      rs.filter(r => !r.flag && !(unit === 'hours' && r.otUnknown) && r.date.slice(0, 7) === month).forEach(r => { const v = dayValues(r, unit, hoursPerMd); total += v.one; if (v.one) count++; });
       plan.forEach((p, j) => {
         if (!p.key) return;
         if (NAME_RE.test(p.key)) cells[j] = n;
