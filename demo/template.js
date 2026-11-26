@@ -119,13 +119,13 @@
       if (pairs || hasLabels) start = Math.max(start, sub + 1);
       while (start <= ws.rowCount && !ownText(ws, ws.getCell(start, nameCol)) && (isTotalRow(start) || headerish(start) || days.some(d => { const c = ws.getCell(start, d.col); return isFormula(c) && dayOf(cellValue(ws, c)); }))) start++;   // 요일·날짜 반복 행, 위쪽 합계 행 건너뛰기
       // 자료 끝 행: 합계·일계 행 전까지
-      let end = start - 1;
+      let end = start - 1, footer = false;
       for (let rr = start; rr <= ws.rowCount; rr++) {
         const firstCells = [1, 2, 3, 4, nameCol].map(c => norm(cellValue(ws, ws.getCell(rr, c))));
-        if (firstCells.some(t => STOP_RE.test(t)) || isTotalRow(rr)) break;
+        if (firstCells.some(t => STOP_RE.test(t)) || isTotalRow(rr)) { footer = true; break; }
         end = rr;
       }
-      return { ws, headerRow: r, dayRow, start, end, days, pairs, night, cols, headerish };
+      return { ws, headerRow: r, dayRow, start, end, days, pairs, night, cols, headerish, footer };
     }
     return null;
   }
@@ -176,7 +176,8 @@
     };
 
     // 기존 값 지우기(지난달 파일을 양식으로 올린 경우): 날짜 칸의 수식 아닌 값만
-    const rowsOfTable = []; for (let r = t.start; r <= Math.max(t.end, t.start); r++) rowsOfTable.push(r);
+    const lastRow = t.footer ? Math.max(t.end, t.start) : Math.max(t.end, t.start + result.names.length + 5);   // 아래 합계 행이 없으면 줄을 이어서 쓴다
+    const rowsOfTable = []; for (let r = t.start; r <= lastRow; r++) rowsOfTable.push(r);
     if (clear) for (const r of rowsOfTable) { if (!ownText(ws, ws.getCell(r, cols.name)) || t.headerish(r)) continue; for (const d of days) for (const c of pairs ? [d.col, d.col + 1] : [d.col]) { const cell = ws.getCell(r, c); const v = cell.value; if (isFormula(cell) || v === null || v === '') continue; if (typeof v === 'number' || (typeof v === 'string' && v.trim().length <= 3)) cell.value = null; } }   // 이름 있는 줄의 숫자·짧은 표시(휴·결 등)만 지운다
 
     // 사람 행 찾기: 같은 이름 행, 없으면 빈 행
