@@ -157,6 +157,11 @@
     const report = { ok: false, sheet: null, placed: [], unplaced: [], skipped: [], warnings: [] };
     if (!t) { report.warnings.push('양식에서 성명 칸과 날짜 칸(1~31일)을 찾지 못했습니다.'); return report; }
     const { ws, days, pairs, night, cols } = t;
+    if (months.length === 1) {   // 시트 이름에 적힌 달이 자료와 다르면 확인을 받는다
+      const [yy, mm] = months[0].split('-').map(Number);
+      const nm = ws.name.match(/(\d{1,2})\s*월/) || ws.name.match(/(?:^|[^0-9])\d{4}[.\-_](\d{1,2})(?:[^0-9]|$)/);
+      if (nm && +nm[1] !== mm) report.ack = `시트 이름(「${ws.name}」)의 달과 자료의 달(${mm}월)이 다릅니다. 이 시트가 맞을 때만 채우세요.`;
+    }
     report.sheet = ws.name; report.structure = { headerRow: t.headerRow, start: t.start, end: t.end, dayCount: days.length, pairs, cols: Object.fromEntries(Object.entries(cols).map(([k, c]) => [k, colName(c)])) };
     if (months.length > 1 && !days.some(d => d.m) && !days.some(d => d.seg > 0)) { report.warnings.push(`자료가 여러 달(${months.join(', ')})인데 양식 날짜 칸에 월이 없어 어느 달 칸인지 정할 수 없습니다. 한 달씩 나눠 정리한 뒤 채워 주세요.`); return report; }
     if (night) report.warnings.push('날짜마다 주간·야간 두 칸인 양식입니다. 야간 근무는 보고에서 구분하지 않으므로 주간 칸만 채웠습니다.');
@@ -176,13 +181,14 @@
 
     // 사람 행 찾기: 같은 이름 행, 없으면 빈 행
     const nameAt = r => ownText(ws, ws.getCell(r, cols.name));
+    const mergedSub = r => { const c = ws.getCell(r, cols.name); return !!(c.isMerged && c.master && c.master.address !== c.address); };   // 병합된 성명 칸의 아래 행
     const used = new Set();
     const dupNames = new Set(); { const seen = new Set(); for (const r of rowsOfTable) { const n = nameAt(r); if (!n) continue; if (seen.has(n)) dupNames.add(n); seen.add(n); } }
     const dataNames = new Set(result.names.map(norm));
     // 자료에 없는 사람 줄: 일별 값을 지웠으니 고정 합계·출력일수도 비운다(수식이면 그대로)
     if (clear) for (const r of rowsOfTable) { const n = nameAt(r); if (!n || dataNames.has(n)) continue; for (const c of [cols.total, cols.days]) if (c && !isFormula(ws.getCell(r, c))) ws.getCell(r, c).value = null; }
     let written = 0;
-    const findRow = n => { for (const r of rowsOfTable) if (nameAt(r) === norm(n)) { used.add(r); return r; } for (const r of rowsOfTable) if (!nameAt(r) && !used.has(r)) { used.add(r); ws.getCell(r, cols.name).value = n; return r; } return 0; };
+    const findRow = n => { for (const r of rowsOfTable) if (nameAt(r) === norm(n)) { used.add(r); return r; } for (const r of rowsOfTable) if (!nameAt(r) && !used.has(r) && !mergedSub(r)) { used.add(r); ws.getCell(r, cols.name).value = n; return r; } return 0; };
     for (const n of result.names) {
       if (dupNames.has(norm(n))) { report.unplaced.push(n); report.warnings.push(`양식에 「${n}」이 두 줄 이상 있어 누구 줄인지 정할 수 없어 비워 두었습니다.`); continue; }
       const r = findRow(n);
@@ -200,8 +206,14 @@
         if (night && row.otH) report.skipped.push(`${row.date} ${n}: 연장 ${row.otH}시간은 야간 칸에 넣지 않음`);
         total += v.one; if (v.one) count++;
       }
-      if (cols.total && !isFormula(ws.getCell(r, cols.total))) ws.getCell(r, cols.total).value = total;
-      if (cols.days && !isFormula(ws.getCell(r, cols.days))) ws.getCell(r, cols.days).value = count;
+      if (!clear && !pairs) {   // 지난 값을 남기면 합계는 최종 칸 값으로 다시 센다
+        total = 0; count = 0;
+        for (const d of days) { const v = cellValue(ws, ws.getCell(r, d.col)); if (typeof v === 'number') { total += v; if (v) count++; } }
+      }
+      const fixedOk = clear || !pairs;
+      if (!fixedOk && (cols.total || cols.days)) report.skipped.push(`${n}: 지난 값을 남긴 근무/O·T 양식이라 합계 칸은 그대로 둠`);
+      if (fixedOk && cols.total && !isFormula(ws.getCell(r, cols.total))) ws.getCell(r, cols.total).value = total;
+      if (fixedOk && cols.days && !isFormula(ws.getCell(r, cols.days))) ws.getCell(r, cols.days).value = count;
       if (cols.site && !norm(cellValue(ws, ws.getCell(r, cols.site)))) { const s = [...new Set(result.rows.filter(x => x.name === n && x.site).map(x => x.site))].join(', '); if (s) ws.getCell(r, cols.site).value = s; }
       report.placed.push(n);
     }

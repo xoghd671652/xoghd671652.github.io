@@ -15,8 +15,12 @@
     const sheets = swb.SheetNames.map((name, i) => {
       const s = swb.Sheets[name];
       const range = s['!ref'] ? XLSX.utils.decode_range(s['!ref']) : { e: { r: -1, c: -1 } };
-      const masterOf = new Map();   // 병합된 칸(첫 칸 제외) → 첫 칸 주소
-      for (const m of s['!merges'] || []) for (let r = m.s.r; r <= m.e.r; r++) for (let c = m.s.c; c <= m.e.c; c++) if (r !== m.s.r || c !== m.s.c) masterOf.set(addr(r + 1, c + 1), addr(m.s.r + 1, m.s.c + 1));
+      const masterOf = new Map(), bigMerges = [];   // 병합된 칸(첫 칸 제외) → 첫 칸 주소. 아주 큰 병합은 펼치지 않고 범위로 검사
+      for (const m of s['!merges'] || []) {
+        if ((m.e.r - m.s.r + 1) * (m.e.c - m.s.c + 1) > 5000) { bigMerges.push(m); continue; }
+        for (let r = m.s.r; r <= m.e.r; r++) for (let c = m.s.c; c <= m.e.c; c++) if (r !== m.s.r || c !== m.s.c) masterOf.set(addr(r + 1, c + 1), addr(m.s.r + 1, m.s.c + 1));
+      }
+      const masterFor = (r, c, a) => { if (masterOf.has(a)) return masterOf.get(a); for (const m of bigMerges) if (r - 1 >= m.s.r && r - 1 <= m.e.r && c - 1 >= m.s.c && c - 1 <= m.e.c && (r - 1 !== m.s.r || c - 1 !== m.s.c)) return addr(m.s.r + 1, m.s.c + 1); return undefined; };
       const hidden = ((swb.Workbook && swb.Workbook.Sheets) || [])[i];
       const ws = {
         name, state: hidden && hidden.Hidden ? 'hidden' : 'visible',
@@ -24,7 +28,7 @@
         getCell(r, c) {
           if (c === undefined) { const p = parseAddr(r); r = p.r; c = p.c; }
           const a = addr(r, c), key = name + '!' + a;
-          const master = masterOf.get(a);
+          const master = masterFor(r, c, a);
           const read = () => {
             if (writes.has(key)) return writes.get(key);
             const sc = s[a]; if (!sc) return null;
@@ -51,6 +55,7 @@
   // 미리보기: 칸 찾기·채우기 규칙을 돌려 보고 쓸 목록을 만든다(파일은 아직 그대로)
   function plan(deps, buf, result, opts) {
     const { XLSX, Tmpl } = deps;
+    if (buf.byteLength > 20 * 1024 * 1024) return { rep: { ok: false, warnings: ['파일이 20MB보다 커서 읽지 않았습니다. 공수표 시트만 새 통합 문서로 복사해서 올려 주세요.'], placed: [], skipped: [] }, writes: [], sheet: null };
     const swb = XLSX.read(buf, { type: 'array', cellFormula: true, cellNF: true, cellDates: false, sheetStubs: true });   // 결과값 없는 수식 칸도 읽기
     const { wb, writes } = wrap(XLSX, swb);
     const rep = Tmpl.fillTemplate(wb, result, opts);

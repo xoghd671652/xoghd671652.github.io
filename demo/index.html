@@ -117,6 +117,7 @@ tr.warn td{background:var(--warnbg)}
       <h3 id="tplDlgT" style="margin:0 0 8px">이 양식에 이렇게 채울까요?</h3>
       <div id="tplDlgBody" style="white-space:pre-line;font-size:14px"></div>
       <label style="font-weight:400;margin-top:10px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="tplClear" checked> <span id="tplClearLabel">지난 값 지우기</span></label>
+      <label id="tplAckRow" hidden style="font-weight:400;margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--warn)"><input type="checkbox" id="tplAck"> <span id="tplAckLabel"></span></label>
       <p class="note">양식 모양(서식·병합·수식)과 다른 시트는 바꾸지 않고, 표시된 칸의 값만 넣거나 지웁니다. 올린 원본 파일은 그대로이고 채운 사본을 내려받습니다.</p>
       <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="ghost" id="tplNo">취소</button><button id="tplYes">이대로 채우기</button></div>
     </dialog>
@@ -330,22 +331,31 @@ const tplOpts = () => ({ unit: $('#tplUnit').value, hoursPerMd: 8 });
 // 양식 채우기: 미리보기(plan)로 바꿀 칸 목록을 만들고, 확인을 받은 뒤 그 칸 값만 써 넣는다(apply)
 const XDEPS = () => ({ XLSX: window.XLSX, Tmpl: window.Tmpl, JSZip: window.JSZip, DOMParser, XMLSerializer });
 function planFill(clear){ try { return XFill.plan(XDEPS(), new Uint8Array(tplBuf), result, Object.assign(tplOpts(), { clear })); } catch (e) { return { error: e.message }; } }
+function dlgBody(p){
+  const st = p.rep.structure, c = st.cols;
+  return [
+    `시트: 「${p.sheet}」`,
+    `성명 ${c.name}열 · 날짜 칸 ${st.dayCount}개${st.pairs ? '(근무/O·T 두 칸)' : ''}${c.total ? ` · 합계 ${c.total}열` : ''} · ${st.start}행부터`,
+    `넣을 칸 ${p.rep.plan.fill}개 (${p.rep.placed.length}명) · 지울 칸 ${p.rep.plan.clear}개`,
+    p.rep.skipped.length ? `비워 둘 칸 ${p.rep.skipped.length}개 (확인 필요 등)` : '',
+    ...p.rep.warnings.map(w => '주의: ' + w),
+  ].filter(Boolean).join('\n');
+}
 function askConfirm(p){
   return new Promise(resolve => {
-    const st = p.rep.structure, c = st.cols;
-    $('#tplDlgBody').textContent = [
-      `시트: 「${p.sheet}」`,
-      `성명 ${c.name}열 · 날짜 칸 ${st.dayCount}개${st.pairs ? '(근무/O·T 두 칸)' : ''}${c.total ? ` · 합계 ${c.total}열` : ''} · ${st.start}행부터`,
-      `넣을 칸 ${p.rep.plan.fill}개 (${p.rep.placed.length}명)`,
-      p.rep.skipped.length ? `비워 둘 칸 ${p.rep.skipped.length}개 (확인 필요 등)` : '',
-      ...p.rep.warnings.map(w => '주의: ' + w),
-    ].filter(Boolean).join('\n');
-    $('#tplClearLabel').textContent = `지난 값 지우기 (이름 있는 줄의 숫자·짧은 표시 ${p.clearCount}칸)`;
+    let cur = p;
+    $('#tplClear').checked = true;
+    $('#tplDlgBody').textContent = dlgBody(cur);
+    $('#tplClearLabel').textContent = `지난 값 지우기 (이름 있는 줄의 숫자·짧은 표시 ${p.rep.plan.clear}칸)`;
+    $('#tplClear').onchange = () => { const q = planFill($('#tplClear').checked); if (!q.error && q.rep.ok) { cur = q; $('#tplDlgBody').textContent = dlgBody(cur); } };   // 체크를 바꾸면 미리보기도 다시
+    const needAck = !!p.rep.ack;
+    $('#tplAckRow').hidden = !needAck; $('#tplAck').checked = false; $('#tplAckLabel').textContent = needAck ? p.rep.ack + ' (이 시트가 맞습니다)' : '';
+    $('#tplYes').disabled = needAck; $('#tplAck').onchange = () => { $('#tplYes').disabled = !$('#tplAck').checked; };
     const dlg = $('#tplDlg');
-    const done = v => { dlg.close(); $('#tplYes').onclick = $('#tplNo').onclick = null; resolve(v); };
+    const done = v => { dlg.close(); $('#tplYes').onclick = $('#tplNo').onclick = null; resolve(v ? cur : null); };
     $('#tplYes').onclick = () => done(true); $('#tplNo').onclick = () => done(false);
     dlg.oncancel = () => done(false);
-    if (dlg.showModal) dlg.showModal(); else resolve(confirm('이 양식에 채울까요?'));
+    if (dlg.showModal) dlg.showModal(); else resolve(confirm('이 양식에 채울까요?') ? cur : null);
   });
 }
 function reportText(rep){
@@ -375,9 +385,8 @@ $('#xlsx').onclick = async () => {
     const p = planFill(true);
     if (p.error) { info(`파일을 읽지 못했습니다(${p.error}).`); return; }
     if (!p.rep.ok) { info(reportText(p.rep)); return; }
-    p.clearCount = p.rep.plan.clear;
-    if (!(await askConfirm(p))) { info('채우기를 취소했습니다. 파일은 바뀌지 않았습니다.'); return; }
-    const final = $('#tplClear').checked ? p : planFill(false);
+    const final = await askConfirm(p);
+    if (!final) { info('채우기를 취소했습니다. 파일은 바뀌지 않았습니다.'); return; }
     try {
       const out = await XFill.apply(XDEPS(), new Uint8Array(tplBuf), final.sheet, final.writes);
       info(reportText(final.rep));
