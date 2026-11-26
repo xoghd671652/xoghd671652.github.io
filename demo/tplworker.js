@@ -5,7 +5,8 @@ onmessage = async e => {
   try {
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
     const rep = Tmpl.fillTemplate(wb, result, opts);
-    const out = save && rep.ok ? await wb.xlsx.writeBuffer() : null;
-    postMessage({ rep, out }, out ? [out] : []);
+    let out = null;
+    if (save && rep.ok) { const u8 = new Uint8Array(await wb.xlsx.writeBuffer()); out = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength); }   // 순수 ArrayBuffer로 넘긴다
+    postMessage({ rep: JSON.parse(JSON.stringify(rep)), out }, out ? [out] : []);
   } catch (err) { postMessage({ error: err.message }); }
 };
