@@ -155,19 +155,19 @@ let result = null, tab = 'sum';
 
 function parseLines(text){
   // 카카오톡 PC 내보내기 형식과 모바일(안드로이드·아이폰) 형식을 모두 읽는다
-  const out = []; let curDate = null; out.unknown = [];
+  const out = []; let curDate = null; out.unknown = []; let orphan = false;   // orphan: 형식 모르는 줄 다음 줄들도 앞 보고에 붙이지 않음
   for (const raw of text.split(/\r?\n/)){
     const line = raw.trim(); if (!line) continue;
     let m = line.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*\S*요일/);
     if (m && (/^-+/.test(line) || /^\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\S*요일$/.test(line))) { curDate = fmt(m[1],m[2],m[3]); continue; }   // 날짜 구분 줄
     m = line.match(/^\[([^\]]+)\]\s*\[(오전|오후)\s*(\d{1,2}):(\d{2})\]\s*(.*)$/);
-    if (m) { out.push({date:curDate, who:m[1], time:`${m[2]} ${m[3]}:${m[4]}`, msg:m[5], raw:line}); continue; }
+    if (m) { out.push({date:curDate, who:m[1], time:`${m[2]} ${m[3]}:${m[4]}`, msg:m[5], raw:line}); orphan = false; continue; }
     m = line.match(/^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)?\s*(\d{1,2}):(\d{2}),\s*([^:]+?)\s*:\s*(.*)$/);
-    if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]||''} ${m[5]}:${m[6]}`.trim(), msg:m[8], raw:line}); continue; }
+    if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]||''} ${m[5]}:${m[6]}`.trim(), msg:m[8], raw:line}); orphan = false; continue; }
     m = line.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*(오전|오후)?\s*(\d{1,2}):(\d{2}),\s*([^:]+?)\s*:\s*(.*)$/);   // 아이폰: 2026. 11. 24. 오전 7:42, 이름 : 내용
-    if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]||''} ${m[5]}:${m[6]}`.trim(), msg:m[8], raw:line}); continue; }
+    if (m) { curDate = fmt(m[1],m[2],m[3]); out.push({date:curDate, who:m[7], time:`${m[4]||''} ${m[5]}:${m[6]}`.trim(), msg:m[8], raw:line}); orphan = false; continue; }
     if (/(카카오톡 대화|저장한 날짜|^Talk_|님과 카카오톡)/.test(line) && !out.length) continue;   // 파일 머리말
-    if (!out.length || /^\d{4}\s*[.년\/-]\s*\d{1,2}|^\[[^\]]+\]\s*\[/.test(line)) { out.unknown.push(line); continue; }   // 형식을 모르는 메시지 줄은 앞 보고에 붙이지 않는다
+    if (!out.length || orphan || /^\d{4}\s*[.년\/-]\s*\d{1,2}|^\[[^\]]+\]\s*\[/.test(line)) { out.unknown.push(line); orphan = out.length > 0; continue; }   // 형식을 모르는 메시지 줄은 앞 보고에 붙이지 않는다
     if (out.length) { out[out.length-1].msg += ' ' + line; out[out.length-1].raw += '\n' + line; }
   }
   return out;
@@ -214,12 +214,12 @@ function analyze(chat, rosterText, rule){
       const names = hangulNames(seg).filter(w => !STOP.has(w) && !(site && site.includes(w)) && !/현장|센터$/.test(w));
       const known = names.filter(n => rosterSet.has(n)).concat(latin.filter(([, re]) => re.test(seg)).map(([n]) => n));
       const unknown = names.filter(n => !rosterSet.has(n) && looksLikeName(n));
-      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && rosterSet.has((m.who || '').trim())) known.push(m.who.trim());   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
+      if (!known.length && !unknown.length && /출근|연장|반일|조퇴|결근/.test(seg) && (m.who || '').trim()) { const w = m.who.trim(); if (rosterSet.has(w)) known.push(w); else if (looksLikeName(w) && /^[가-힣]+$/.test(w)) unknown.push(w); }   // 본인이 보낸 보고는 보낸 사람으로(명단 밖이면 확인 목록)   // 본인이 보낸 보고("출근했습니다")는 보낸 사람으로
 
       // 애매한 보고는 더하지 않고 확인 목록으로 (규칙 기반이라 확실한 것만 자동 처리)
       const people = [...new Set(known.concat(unknown))];
       const cats = ['출근', '연장', '반일|조퇴', '결근'].filter(k => new RegExp(k).test(seg));
-      if (/안\s*(함|했|해|하|나|왔|옴)|않|못\s*(나|했|함|하|왔|옴)|미출근|불참|없음|내일|모레|예정|할\s*예정/.test(seg) && people.length) {   // 부정·예정 표현은 자동 반영하지 않음
+      if (/안\s*(함|했|해|하|나|왔|옴)|않|못\s*[가-힣]|미출근|불참|없음|내일|모레|예정|할\s*예정/.test(seg) && people.length) {   // 부정·예정 표현은 자동 반영하지 않음
         for (const n of people) { upsert(n,{src:m.raw}).flag = true; flag(m.date, n, '부정·예정 표현이 있는 보고(직접 확인)', m.raw); }
         continue;
       }
