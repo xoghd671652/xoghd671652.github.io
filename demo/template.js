@@ -80,7 +80,9 @@
       for (const rr of [r, r + 1, r - 1].filter(x => x >= 1)) {
         const found = [];
         for (let c = nameCol + 1; c <= maxC; c++) {
-          const d = dayOf(cellValue(ws, ws.getCell(rr, c))); if (!d) continue;
+          const cell = ws.getCell(rr, c);
+          if (cell.isMerged && cell.master && cell.master.address !== cell.address) continue;   // 병합된 날짜 칸(근무/O·T 위)은 한 번만
+          const d = dayOf(cellValue(ws, cell)); if (!d) continue;
           const prev = found[found.length - 1];
           if (prev && !d.y) {   // 일 번호만 있으면 1씩 늘어나는 연속 칸만 (말일 뒤 1일은 다음 달)
             const next = prev.d + 1, wrap = prev.d >= 28 && d.d === 1;
@@ -95,7 +97,8 @@
       // 날짜마다 두 칸(근무/O·T): 다음 행에 근무·O/T 라벨이 있으면
       const sub = r + 1 === dayRow ? r + 2 : r + 1;
       const labelAt = c => norm(cellValue(ws, ws.getCell(sub, c)));
-      const pairs = days.length && WORK_RE.test(labelAt(days[0].col)) && OT_RE.test(labelAt(days[0].col + 1));
+      const pairs = days.slice(0, 3).some(d => OT_RE.test(labelAt(d.col + 1)));   // 첫 칸 라벨이 비어 있는 양식도 있어 앞 3일을 본다
+      const hasLabels = days.slice(0, 3).some(d => WORK_RE.test(labelAt(d.col)) || OT_RE.test(labelAt(d.col + 1)));
       const cols = { name: nameCol };
       for (let c = 1; c <= maxC; c++) {
         const h = norm(cellValue(ws, ws.getCell(r, c)));
@@ -109,7 +112,7 @@
       const isTotalRow = rr => days.slice(0, 5).some(d => { const c = ws.getCell(rr, d.col); return isFormula(c) && (/SUM|SUBTOTAL/i.test(formulaText(c)) || (c.value.sharedFormula && /SUM/i.test(formulaText(ws.getCell(c.value.sharedFormula))))); });
       // 자료 시작 행: 머리글·날짜행·라벨행 다음
       let start = Math.max(r, dayRow) + 1;
-      if (pairs || [WORK_RE, OT_RE].some(re => re.test(labelAt(days[0].col)))) start = Math.max(start, sub + 1);
+      if (pairs || hasLabels) start = Math.max(start, sub + 1);
       while (start <= ws.rowCount && !ownText(ws, ws.getCell(start, nameCol)) && (isTotalRow(start) || days.some(d => { const c = ws.getCell(start, d.col); return isFormula(c) && dayOf(cellValue(ws, c)); }))) start++;   // 요일·날짜 반복 행, 위쪽 합계 행 건너뛰기
       // 자료 끝 행: 합계·일계 행 전까지
       let end = start - 1;
