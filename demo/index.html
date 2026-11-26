@@ -35,6 +35,7 @@ button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)
 .tabs button{background:transparent;color:var(--sub);border:1px solid var(--line)}
 .tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .tw{overflow-x:auto}
+select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);color:var(--ink);font:inherit;max-width:100%}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 th{color:var(--sub);font-weight:600}
@@ -81,10 +82,16 @@ tr.warn td{background:var(--warnbg)}
       <button data-t="det">상세 내역</button>
       <button data-t="rev">확인 필요</button>
       <span style="flex:1"></span>
+      <select id="xform" aria-label="엑셀 양식">
+        <option value="basic">기본 (시트 3개)</option>
+        <option value="month">월간 공수현황 (달력형)</option>
+        <option value="split">근무·연장 분리형</option>
+        <option value="hours">근무시간 기록형</option>
+      </select>
       <button id="xlsx">엑셀 내려받기</button>
     </div>
     <div class="tw" id="view"></div>
-    <p class="note">엑셀은 지금 기본 양식 1종으로 저장됩니다. 현장이나 원청에 따라 공수표 양식이 다를 수 있어, 앞으로는 각 현장 공수표의 칸 이름·순서·소계 형식에 맞춰 내보낼 계획입니다.</p>
+    <p class="note">엑셀 양식은 현장에서 흔히 쓰는 형태를 본뜬 예시 4종 중에서 고를 수 있습니다(가상 양식). 실제 도입 때는 각 현장 공수표의 칸 이름·순서·소계 위치에 맞춰 양식을 추가합니다. 금액·단가 계산은 하지 않습니다.</p>
   </div>
   <p class="note">이 데모는 인터넷 연결 없이 브라우저 안에서만 동작하며, 입력한 내용을 서버로 보내지 않습니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
 </main>
@@ -261,8 +268,61 @@ function render(){
 const show = v => String(+v.toFixed(6));          // 화면 표시용(부동소수 잡음 제거)
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+// ── 현장 양식 예시: 같은 정리 결과를 여러 공수표 형태로 내보낸다 (금액·단가는 다루지 않음)
+const DOW = '일월화수목금토';
+const HOURS_PER_MD = 8;   // 근무시간 기록형: 1공수 = 8시간으로 환산
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+function monthDays(dates){   // 첫 날짜가 속한 달 1일 ~ 마지막 날짜가 속한 달 말일
+  const f = dates[0], l = dates[dates.length-1], out = [];
+  for (let d = new Date(+f.slice(0,4), +f.slice(5,7)-1, 1), e = new Date(+l.slice(0,4), +l.slice(5,7), 0); d <= e; d.setDate(d.getDate()+1)) out.push(ymd(d));
+  return out;
+}
+function formSheet(form){
+  const {rows, dates, names} = result;
+  const days = monthDays(dates);
+  const at = (d, n) => rows.find(x => x.date === d && x.name === n);
+  const siteOf = n => [...new Set(rows.filter(r => r.name === n && r.site).map(r => r.site))].join(', ');
+  const noteOf = n => [...new Set(rows.filter(r => r.name === n).flatMap(r => r.note.concat(r.flag ? ['확인 필요'] : [])))].join(', ');
+  const add = a => +a.reduce((t, v) => t + (typeof v === 'number' ? v : 0), 0).toFixed(6);
+  const period = days[0].slice(0,7) === days[days.length-1].slice(0,7) ? `${days[0].slice(0,4)}년 ${+days[0].slice(5,7)}월` : `${days[0].slice(0,7)} ~ ${days[days.length-1].slice(0,7)}`;
+  const site = siteOf(names[0]) || '현장';
+  const dayNo = days.map(d => +d.slice(8)), dow = days.map(d => DOW[new Date(d + 'T00:00').getDay()]);
+  let aoa, merges = [], name;
+  if (form === 'month') {
+    name = '공수현황';
+    aoa = [[`(데모) ${site} ${period} 공수현황`], [], ['순번','현장','성명','직종', ...dayNo, '합계','출력일수','비고'], ['','','','', ...dow, '','','']];
+    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); return r && r.total ? r.total : ''; }); aoa.push([i+1, siteOf(n), n, '', ...v, add(v), v.filter(x => x !== '').length, noteOf(n)]); });
+    aoa.push(['','','일계','', ...days.map((d, j) => add(aoa.slice(4).map(r => r[4+j]))), add(aoa.slice(4).map(r => r[4+days.length])), '', '']);
+    merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
+  } else if (form === 'split') {
+    name = '근무현황';
+    aoa = [[`(데모) ${site} ${period} 근무현황 (근무=공수, O/T=연장 시간)`], [], ['순번','현장','구분','성명','공종'], ['','','','','']];
+    days.forEach((d, j) => { aoa[2].push(`${dayNo[j]}(${dow[j]})`, ''); aoa[3].push('근무','O/T'); merges.push({s:{r:2,c:5+j*2}, e:{r:2,c:6+j*2}}); });
+    aoa[2].push('근무 합계','O/T 합계(시간)','환산 공수 합계'); aoa[3].push('','','');
+    names.forEach((n, i) => { const cells = [], b = [], o = [], t = []; days.forEach(d => { const r = at(d, n); cells.push(r && r.base ? r.base : '', r && r.otH ? r.otH : ''); b.push(r ? r.base : 0); o.push(r ? r.otH : 0); t.push(r ? r.total : 0); }); aoa.push([i+1, siteOf(n), '', n, '', ...cells, add(b), add(o), add(t)]); });
+    merges.push({s:{r:0,c:0}, e:{r:0,c:8}});
+  } else {
+    name = '근무시간';
+    aoa = [[`(데모) ${site} ${period} 근무시간 체크표 (1공수 = ${HOURS_PER_MD}시간 + 연장 시간)`], [], ['No.','소속','성명', ...days.map((d, j) => `${+d.slice(5,7)}/${dayNo[j]}(${dow[j]})`), '합계(시간)']];
+    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); const h = r ? +(r.base * HOURS_PER_MD + r.otH).toFixed(6) : 0; return h || ''; }); aoa.push([i+1, siteOf(n), n, ...v, add(v)]); });
+    merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
+  ws['!cols'] = aoa[2].map((h, c) => ({wch: c < 5 ? 12 : 6}));
+  return [ws, name];
+}
+
 function exportXlsx(){
   const {rows, review, dates, names} = result;
+  const form = ($('#xform') && $('#xform').value) || 'basic';
+  if (form !== 'basic') {
+    const wb = XLSX.utils.book_new(); const [ws, name] = formSheet(form);
+    XLSX.utils.book_append_sheet(wb, ws, name);
+    if (review.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(review.map(v=>({날짜:v.date, 이름:v.name, 확인할내용:v.reason, 근거보고:v.src}))), '확인 필요');
+    XLSX.writeFile(wb, `공수정리_${name}_${dates[0]||''}_${dates[dates.length-1]||''}.xlsx`);
+    return;
+  }
   const wb = XLSX.utils.book_new();
   const sumAoa = [['이름', ...dates, '합계']].concat(names.map(n=>{ let t=0; const cells = dates.map(d=>{ const r=rows.find(x=>x.date===d&&x.name===n); if(!r) return ''; t+=r.total; return r.total; }); return [n, ...cells, t]; }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumAoa), '사람별 공수표');
