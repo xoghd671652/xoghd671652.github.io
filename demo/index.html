@@ -91,7 +91,7 @@ tr.warn td{background:var(--warnbg)}
       <button id="xlsx">엑셀 내려받기</button>
     </div>
     <div class="tw" id="view"></div>
-    <p class="note">엑셀 양식은 현장에서 흔히 쓰는 형태를 본뜬 예시 4종 중에서 고를 수 있습니다(가상 양식). 실제 도입 때는 각 현장 공수표의 칸 이름·순서·소계 위치에 맞춰 양식을 추가합니다. 금액·단가 계산은 하지 않습니다.</p>
+    <p class="note">현재 가상 엑셀 양식 4종 중에서 골라 내려받을 수 있습니다. 현장별 칸 이름·순서·소계 위치 맞춤은 개발 계획입니다. 금액·단가 계산은 하지 않습니다.</p>
   </div>
   <p class="note">이 데모는 인터넷 연결 없이 브라우저 안에서만 동작하며, 입력한 내용을 서버로 보내지 않습니다. 공수 기준은 예시 값이고 급여·연장수당 계산이 아닙니다. 실제 서비스는 업체별 보고 양식·공수 규칙에 맞춰 설정하고, 확인 필요 항목은 사람이 승인한 뒤 확정합니다.</p>
 </main>
@@ -283,15 +283,18 @@ function formSheet(form){
   const at = (d, n) => rows.find(x => x.date === d && x.name === n);
   const siteOf = n => [...new Set(rows.filter(r => r.name === n && r.site).map(r => r.site))].join(', ');
   const noteOf = n => [...new Set(rows.filter(r => r.name === n).flatMap(r => r.note.concat(r.flag ? ['확인 필요'] : [])))].join(', ');
-  const add = a => +a.reduce((t, v) => t + (typeof v === 'number' ? v : 0), 0).toFixed(6);
+  const add = a => a.reduce((t, v) => t + (typeof v === 'number' ? v : 0), 0);
   const period = days[0].slice(0,7) === days[days.length-1].slice(0,7) ? `${days[0].slice(0,4)}년 ${+days[0].slice(5,7)}월` : `${days[0].slice(0,7)} ~ ${days[days.length-1].slice(0,7)}`;
-  const site = siteOf(names[0]) || '현장';
-  const dayNo = days.map(d => +d.slice(8)), dow = days.map(d => DOW[new Date(d + 'T00:00').getDay()]);
+  const sites = [...new Set(rows.map(r => r.site).filter(Boolean))];
+  const site = sites.length === 1 ? sites[0] : sites.length ? '여러 현장' : '현장';
+  const multiMonth = days[0].slice(0,7) !== days[days.length-1].slice(0,7);
+  const dayNo = days.map(d => multiMonth ? `${+d.slice(5,7)}/${+d.slice(8)}` : +d.slice(8)), dow = days.map(d => DOW[new Date(d + 'T00:00').getDay()]);
+  const absent = r => r && !r.base && !r.otH && r.note.includes('결근');   // 결근 확인된 날은 빈칸(미보고)과 구분
   let aoa, merges = [], name;
   if (form === 'month') {
     name = '공수현황';
     aoa = [[`(데모) ${site} ${period} 공수현황`], [], ['순번','현장','성명','직종', ...dayNo, '합계','출력일수','비고'], ['','','','', ...dow, '','','']];
-    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); return r && r.total ? r.total : ''; }); aoa.push([i+1, siteOf(n), n, '', ...v, add(v), v.filter(x => x !== '').length, noteOf(n)]); });
+    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); return absent(r) ? '결근' : r && r.total ? r.total : ''; }); aoa.push([i+1, siteOf(n), n, '', ...v, add(v), v.filter(x => typeof x === 'number').length, noteOf(n)]); });
     aoa.push(['','','일계','', ...days.map((d, j) => add(aoa.slice(4).map(r => r[4+j]))), add(aoa.slice(4).map(r => r[4+days.length])), '', '']);
     merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   } else if (form === 'split') {
@@ -299,12 +302,12 @@ function formSheet(form){
     aoa = [[`(데모) ${site} ${period} 근무현황 (근무=공수, O/T=연장 시간)`], [], ['순번','현장','구분','성명','공종'], ['','','','','']];
     days.forEach((d, j) => { aoa[2].push(`${dayNo[j]}(${dow[j]})`, ''); aoa[3].push('근무','O/T'); merges.push({s:{r:2,c:5+j*2}, e:{r:2,c:6+j*2}}); });
     aoa[2].push('근무 합계','O/T 합계(시간)','환산 공수 합계'); aoa[3].push('','','');
-    names.forEach((n, i) => { const cells = [], b = [], o = [], t = []; days.forEach(d => { const r = at(d, n); cells.push(r && r.base ? r.base : '', r && r.otH ? r.otH : ''); b.push(r ? r.base : 0); o.push(r ? r.otH : 0); t.push(r ? r.total : 0); }); aoa.push([i+1, siteOf(n), '', n, '', ...cells, add(b), add(o), add(t)]); });
+    names.forEach((n, i) => { const cells = [], b = [], o = [], t = []; days.forEach(d => { const r = at(d, n); cells.push(absent(r) ? '결근' : r && r.base ? r.base : '', r && r.otH ? r.otH : ''); b.push(r ? r.base : 0); o.push(r ? r.otH : 0); t.push(r ? r.total : 0); }); aoa.push([i+1, siteOf(n), '', n, '', ...cells, add(b), add(o), add(t)]); });
     merges.push({s:{r:0,c:0}, e:{r:0,c:8}});
   } else {
     name = '근무시간';
-    aoa = [[`(데모) ${site} ${period} 근무시간 체크표 (1공수 = ${HOURS_PER_MD}시간 + 연장 시간)`], [], ['No.','소속','성명', ...days.map((d, j) => `${+d.slice(5,7)}/${dayNo[j]}(${dow[j]})`), '합계(시간)']];
-    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); const h = r ? +(r.base * HOURS_PER_MD + r.otH).toFixed(6) : 0; return h || ''; }); aoa.push([i+1, siteOf(n), n, ...v, add(v)]); });
+    aoa = [[`(데모) ${site} ${period} 근무시간 체크표 (환산시간 = 기본공수 × ${HOURS_PER_MD} + 연장시간)`], [], ['No.','현장','성명', ...days.map((d, j) => `${+d.slice(5,7)}/${+d.slice(8)}(${dow[j]})`), '합계(시간)']];
+    names.forEach((n, i) => { const v = days.map(d => { const r = at(d, n); if (absent(r)) return '결근'; const h = r ? r.base * HOURS_PER_MD + r.otH : 0; return h || ''; }); aoa.push([i+1, siteOf(n), n, ...v, add(v)]); });
     merges = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -317,8 +320,9 @@ function exportXlsx(){
   const {rows, review, dates, names} = result;
   const form = ($('#xform') && $('#xform').value) || 'basic';
   if (form !== 'basic') {
-    const wb = XLSX.utils.book_new(); const [ws, name] = formSheet(form);
-    XLSX.utils.book_append_sheet(wb, ws, name);
+    const wb = XLSX.utils.book_new(); let name = '확인필요';
+    if (dates.length) { const [ws, nm] = formSheet(form); name = nm; XLSX.utils.book_append_sheet(wb, ws, nm); }   // 집계할 행이 없으면 확인 필요 시트만
+    else if (!review.length) { alert('내보낼 내용이 없습니다.'); return; }
     if (review.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(review.map(v=>({날짜:v.date, 이름:v.name, 확인할내용:v.reason, 근거보고:v.src}))), '확인 필요');
     XLSX.writeFile(wb, `공수정리_${name}_${dates[0]||''}_${dates[dates.length-1]||''}.xlsx`);
     return;
